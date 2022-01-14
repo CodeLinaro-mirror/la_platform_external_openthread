@@ -1,63 +1,168 @@
-Contributing
-============
-We gratefully accept bug reports and contributions from the community. There are some requirements we need to fulfill in order to be able to integrate contributions:
+# Contributing to OpenThread
 
- - As with any open source project, contributions will be reviewed by the project team and community and may need some modifications to be accepted.
- - The contribution should not break API or ABI, unless there is a real justification for that. If there is an API change, the contribution, if accepted, will be merged only when there will be a major release.
+We would love for you to contribute to OpenThread and help make it even better than it is today! As a contributor, here are the guidelines we would like you to follow.
 
-Contributor License Agreement (CLA)
------------------------------------
-- All contributions, whether large or small, require a Contributor's License Agreement (CLA) to be accepted. This is because source code can possibly fall under copyright law and we need your consent to share in the ownership of the copyright.
-- To accept the Contributor’s License Agreement (CLA), individual contributors can do this by creating an Mbed account and [accepting the online agreement here with a click through](https://developer.mbed.org/contributor_agreement/). Alternatively, for contributions from corporations, or those that do not wish to create an Mbed account, a slightly different agreement can be found [here](https://www.mbed.com/en/about-mbed/contributor-license-agreements/). This agreement should be signed and returned to Arm as described in the instructions given.
+- [1 Code of Conduct](#code-of-conduct)
+- [2 Bugs](#bugs)
+- [3 New Features](#new-features)
+- [4 Contributing Code](#contributing-code)
+  - [4.1 Initial Setup](#initial-setup)
+  - [4.2 Contributor License Agreement (CLA)](#contributor-license-agreement--cla-)
+  - [4.3 Submitting a Pull Request](#submitting-a-pull-request)
+- [5 Contributing Documentation](#contributing-documentation)
 
-Coding Standards
-----------------
-- We would ask that contributions conform to [our coding standards](https://tls.mbed.org/kb/development/mbedtls-coding-standards), and that contributions are fully tested before submission, as mentioned in the [Tests](#tests) and [Continuous Integration](#continuous-integration-tests) sections.
-- The code should be written in a clean and readable style.
-- The code should be written in a portable generic way, that will benefit the whole community, and not only your own needs.
-- The code should be secure, and will be reviewed from a security point of view as well.
+## Code of Conduct
 
-Making a Contribution
----------------------
-1. [Check for open issues](https://github.com/ARMmbed/mbedtls/issues) or [start a discussion](https://tls.mbed.org/discussions) around a feature idea or a bug.
-1. Fork the [Mbed TLS repository on GitHub](https://github.com/ARMmbed/mbedtls) to start making your changes. As a general rule, you should use the ["development" branch](https://github.com/ARMmbed/mbedtls/tree/development) as a basis.
-1. Write a test which shows that the bug was fixed or that the feature works as expected.
-1. Send a pull request (PR) and work with us until it gets merged and published. Contributions may need some modifications, so a few rounds of review and fixing may be necessary. We will include your name in the ChangeLog :)
-1. For quick merging, the contribution should be short, and concentrated on a single feature or topic. The larger the contribution is, the longer it would take to review it and merge it.
-1. Mbed TLS is released under the Apache license, and as such, all the added files should include the Apache license header.
+Help us keep OpenThread open and inclusive. Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
-Backports
----------
-Mbed TLS maintains some legacy branches, which are released as LTS versions. Mbed TLS should follow backwards compatibility rules, to fit with existing users. As such, backporting to these branches should be handled according to the following rules:
-  
-1. If the contribution is a new feature or enhancement, no backporting is needed.
-1. Bug fixes should be backported to the legacy branches containing these bugs.
-1. Changes in the API do not require backporting. If a bug fix introduced a new API, such as new error codes, the bug fix should be implemented differently in the legacy branch.
+## Bugs
 
-It would be highly appreciated if a contribution would be backported to a legacy branch in addition to the [development branch](https://github.com/ARMmbed/mbedtls/tree/development).
-At the moment, the legacy branches are:
-  
-1. [mbedtls-1.3](https://github.com/ARMmbed/mbedtls/tree/mbedtls-1.3)
-1. [mbedtls-2.1](https://github.com/ARMmbed/mbedtls/tree/mbedtls-2.1)
+If you find a bug in the source code, you can help us by [submitting a GitHub Issue](https://github.com/openthread/openthread/issues/new). The best bug reports provide a detailed description of the issue and step-by-step instructions for predictably reproducing the issue. Even better, you can [submit a Pull Request](#submitting-a-pull-request) with a fix.
 
-Tests
------
-As mentioned, tests that show the correctness of the feature or bug fix should be added to the pull request, if no such tests exist.  
-Mbed TLS includes an elaborate test suite in `tests/` that initially requires Perl to generate the tests files (e.g. `test_suite_mpi.c`). These files are generated from a `function file` (e.g. `suites/test_suite_mpi.function`) and a `data file` (e.g. `suites/test_suite_mpi.data`). The function file contains the test functions. The data file contains the test cases, specified as parameters that will be passed to the test function.
+## New Features
 
-Sample applications, if needed, should be modified as well.
+You can request a new feature by [submitting a GitHub Issue](https://github.com/openthread/openthread/issues/new).
 
-Continuous Integration Tests
-----------------------------
-Once a PR has been made, the Continuous Integration (CI) tests are triggered and run. You should follow the result of the CI tests, and fix failures. 
-It is advised to enable the [githooks scripts](https://github.com/ARMmbed/mbedtls/tree/development/tests/git-scripts) prior to pushing your changes, for catching some of the issues as early as possible.
+If you would like to implement a new feature, please consider the scope of the new feature:
 
-Documentation
--------------
-Mbed TLS should be well documented. If documentation is needed, speak out!
+- _Large feature_: first [submit a GitHub Issue](https://github.com/openthread/openthread/issues/new) and communicate your proposal so that the community can review and provide feedback. Getting early feedback will help ensure your implementation work is accepted by the community. This will also allow us to better coordinate our efforts and minimize duplicated effort.
 
-1. All interfaces should be documented through Doxygen. New APIs should introduce Doxygen documentation.
-1. Complex parts in the code should include comments.
-1. If needed, a Readme file is advised.
-1. If a [Knowledge Base (KB)](https://tls.mbed.org/kb) article should be added, write this as a comment in the PR description.
-1. A [ChangeLog](https://github.com/ARMmbed/mbedtls/blob/development/ChangeLog) entry should be added for this contribution.
+- _Small feature_: can be implemented and directly [submitted as a Pull Request](#submitting-a-pull-request).
+
+## Contributing Code
+
+The OpenThread Project follows the "Fork-and-Pull" model for accepting contributions.
+
+### Initial Setup
+
+Setup your GitHub fork and continuous-integration services:
+
+1. Fork the [OpenThread repository](https://github.com/openthread/openthread) by clicking "Fork" on the web UI.
+
+Setup your local development environment:
+
+```bash
+# Clone your fork
+git clone git@github.com:<username>/openthread.git
+
+# Configure upstream alias
+git remote add upstream git@github.com:openthread/openthread.git
+```
+
+### Contributor License Agreement (CLA)
+
+Contributions to this project must be accompanied by a Contributor License Agreement. You (or your employer) retain the copyright to your contribution; this simply gives us permission to use and redistribute your contributions as part of the project. Head over to <https://cla.developers.google.com/> to see your current agreements on file or to sign a new one.
+
+You generally only need to submit a CLA once, so if you've already submitted one (even if it was for a different project), you probably don't need to do it again.
+
+### Submitting a Pull Request
+
+#### Branch
+
+For each new feature, create a working branch:
+
+```bash
+# Create a working branch for your new feature
+git branch --track <branch-name> origin/main
+
+# Checkout the branch
+git checkout <branch-name>
+```
+
+#### Create Commits
+
+```bash
+# Add each modified file you'd like to include in the commit
+git add <file1> <file2>
+
+# Create a commit
+git commit
+```
+
+This will open up a text editor where you can craft your commit message.
+
+#### Upstream Sync and Clean Up
+
+Prior to submitting your pull request, you might want to do a few things to clean up your branch and make it as simple as possible for the original repo's maintainer to test, accept, and merge your work.
+
+If any commits have been made to the upstream main branch, you should rebase your development branch so that merging it will be a simple fast-forward that won't require any conflict resolution work.
+
+```bash
+# Fetch upstream main and merge with your repo's main branch
+git checkout main
+git pull upstream main
+
+# If there were any new commits, rebase your development branch
+git checkout <branch-name>
+git rebase main
+```
+
+Now, it may be desirable to squash some of your smaller commits down into a small number of larger more cohesive commits. You can do this with an interactive rebase:
+
+```bash
+# Rebase all commits on your development branch
+git checkout
+git rebase -i main
+```
+
+This will open up a text editor where you can specify which commits to squash.
+
+#### Coding Conventions and Style
+
+OpenThread uses and enforces the [OpenThread Coding Conventions and Style](STYLE_GUIDE.md) on all code, except for code located in [third_party](third_party). Use `script/make-pretty` and `script/make-pretty check` to automatically reformat code and check for code-style compliance, respectively. OpenThread currently requires [clang-format v9.0.0](https://releases.llvm.org/download.html#9.0.0) for C/C++ and [yapf v0.31.0](https://github.com/google/yapf) for Python.
+
+As part of the cleanup process, you should also run `script/make-pretty check` to ensure that your code passes the baseline code style checks.
+
+#### Push and Test
+
+```bash
+# Checkout your branch
+git checkout <branch-name>
+
+# Push to your GitHub fork:
+git push origin <branch-name>
+```
+
+This will trigger continuous-integration checks using GitHub Actions. You can view the status and logs via the "Actions" tab in your fork.
+
+#### Submit Pull Request
+
+Once you've validated that all continuous-integration checks have passed, go to the page for your fork on GitHub, select your development branch, and click the pull request button. If you need to make any adjustments to your pull request, just push the updates to GitHub. Your pull request will automatically track the changes on your development branch and update.
+
+#### Checks fail
+
+Once you've submitted a pull request, all continuous-integration checks are triggered again. If some of these checks fail, it could be either problems with the pull request or an intermittent failure of some test cases. For more information on the failure, check the output and download artifacts. (After all jobs in one group are completed, an `Artifacts` button appears beside the `Re-run` jobs button.) If the failure is intermittent, the check will usually pass after rerunning once or twice.
+
+We want to eliminate intermittent failures as well, so when you experience such a failure, please log an issue and attach any relevant artifacts. If the artifacts are too big, provide the link of the failed run (do not rerun checks again, or it will be overwritten). Alternatively, upload the artifacts to a file-sharing service like Google Drive and share a link to it.
+
+##### Analyze core dumps in failed checks
+
+For some checks, core dumps for crashed programs are uploaded as artifacts in a failed check. Besides core dumps, binaries and shared libraries are also uploaded so that we can analyze the dumps locally. To analyze the dumps, download the artifact `core-xxx` and unzip it. The package is in the following format:
+
+```
+|-- build
+|   `-- cmake
+|       `-- openthread-simulation-1.2
+|           `-- examples
+|               `-- apps
+|                   `-- cli
+|                       |-- ot-cli-ftd
+|                       `-- ot-cli-mtd
+|-- ot-core-dump
+|   `-- corefile-ot-cli-ftd-11323-1606274703
+`-- so-lib
+    |-- ld-linux-x86-64.so.2
+    |-- libc.so.6
+    `-- libgcc_s.so.1
+```
+
+Once unzipped:
+
+1. `cd` to the unzipped directory
+2. Run `gdb build/cmake/openthread-simulation-1.2/examples/apps/cli/ot-cli-ftd ./ot-core-dump/corefile-ot-cli-ftd-XXX`.
+3. Set the absolute path of `so-lib`. In gdb, run `set solib-absolute-prefix /ABSOLUTE/PATH/TO/so-lib/`, then run `set solib-search-path /ABSOLUTE/PATH/TO/so-lib/`.
+4. In gdb, run `backtrace` or `bt`. Then you should see the stack of the crashed program. Find and fix the problem!
+
+## Contributing Documentation
+
+Documentation undergoes the same review process as code and contributions may be mirrored on our [openthread.io](https://openthread.io) website. See the [Documentation Style Guide](https://github.com/openthread/ot-docs/blob/main/STYLE_GUIDE.md) for more information on how to author and format documentation for contribution.
