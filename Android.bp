@@ -86,6 +86,8 @@ cc_defaults {
         "-DPACKAGE_URL=\"http://github.com/openthread/openthread\"",
         "-DSPINEL_PLATFORM_HEADER=\"spinel_platform.h\"",
     ],
+    apex_available: [ "com.android.threadnetwork" ],
+    min_sdk_version: "33",
 }
 
 genrule {
@@ -135,6 +137,8 @@ ot_config_cc_defaults {
             },
         },
     },
+    apex_available: [ "com.android.threadnetwork" ],
+    min_sdk_version: "33",
 }
 
 cc_library_static {
@@ -495,6 +499,8 @@ cc_library_static {
         "third_party/tcplp/lib/cbuf.c",
         "third_party/tcplp/lib/lbuf.c",
     ],
+    apex_available: [ "com.android.threadnetwork" ],
+    min_sdk_version: "33",
 }
 
 cc_library_static {
@@ -730,6 +736,33 @@ cc_library_static {
     ],
     srcs: [
         "src/lib/hdlc/hdlc.cpp",
+    ],
+}
+
+cc_library_static {
+    name: "openthread-spi",
+    vendor: true,
+    local_include_dirs: [
+        "include",
+        "src",
+        "src/core",
+        "src/lib/platform",
+        "src/posix/platform",
+        "src/posix/platform/include",
+    ],
+    export_include_dirs: [
+        "include",
+        "src/core",
+        "src/posix/platform",
+        "src/posix/platform/include",
+    ],
+
+    cflags: [
+        "-DOPENTHREAD_POSIX_CONFIG_RCP_BUS=OT_POSIX_RCP_BUS_SPI",
+    ],
+
+    srcs: [
+        "src/posix/platform/spi_interface.cpp",
     ],
 }
 

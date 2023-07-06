@@ -41,8 +41,6 @@
 #include "platform-posix.h"
 #include "lib/spinel/spinel_interface.hpp"
 
-#if OPENTHREAD_POSIX_CONFIG_RCP_BUS == OT_POSIX_RCP_BUS_VENDOR
-
 namespace ot {
 namespace Posix {
 
@@ -50,7 +48,7 @@ namespace Posix {
  * This class defines a vendor interface to the Radio Co-processor (RCP).
  *
  */
-class VendorInterface
+class VendorInterface : public ot::Spinel::SpinelInterface
 {
 public:
     /**
@@ -119,21 +117,18 @@ public:
     /**
      * This method updates the file descriptor sets with file descriptors used by the radio driver.
      *
-     * @param[in,out] aReadFdSet   A reference to the read file descriptors.
-     * @param[in,out] aWriteFdSet  A reference to the write file descriptors.
-     * @param[in,out] aMaxFd       A reference to the max file descriptor.
-     * @param[in,out] aTimeout     A reference to the timeout.
+     * @param[in,out]   aMainloopContext  A pointer to the mainloop context containing fd_sets.
      *
      */
-    void UpdateFdSet(fd_set &aReadFdSet, fd_set &aWriteFdSet, int &aMaxFd, struct timeval &aTimeout);
+    void UpdateFdSet(void *aMainloopContext);
 
     /**
      * This method performs radio driver processing.
      *
-     * @param[in] aContext  The context containing fd_sets.
+     * @param[in]   aMainloopContext  A pointer to the mainloop context containing fd_sets.
      *
      */
-    void Process(const RadioProcessContext &aContext);
+    void Process(const void *aMainloopContext);
 
     /**
      * This method returns the bus speed between the host and the radio.
@@ -158,11 +153,10 @@ public:
      * @returns The RCP interface metrics.
      *
      */
-    const otRcpInterfaceMetrics *GetRcpInterfaceMetrics(void);
+    const otRcpInterfaceMetrics *GetRcpInterfaceMetrics(void) const;
 };
 
 } // namespace Posix
 } // namespace ot
 
-#endif // OPENTHREAD_POSIX_CONFIG_RCP_BUS == OT_POSIX_RCP_BUS_VENDOR
 #endif // POSIX_APP_VENDOR_INTERFACE_HPP_

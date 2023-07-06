@@ -42,8 +42,6 @@
 
 #include <openthread/openthread-system.h>
 
-#if OPENTHREAD_POSIX_CONFIG_RCP_BUS == OT_POSIX_RCP_BUS_SPI
-
 #include "ncp/ncp_spi.hpp"
 
 namespace ot {
@@ -53,7 +51,7 @@ namespace Posix {
  * This class defines an SPI interface to the Radio Co-processor (RCP).
  *
  */
-class SpiInterface
+class SpiInterface : public ot::Spinel::SpinelInterface
 {
 public:
     /**
@@ -122,21 +120,18 @@ public:
     /**
      * This method updates the file descriptor sets with file descriptors used by the radio driver.
      *
-     * @param[in,out]  aReadFdSet   A reference to the read file descriptors.
-     * @param[in,out]  aWriteFdSet  A reference to the write file descriptors.
-     * @param[in,out]  aMaxFd       A reference to the max file descriptor.
-     * @param[in,out]  aTimeout     A reference to the timeout.
+     * @param[in,out]   aMainloopContext  A pointer to the mainloop context containing fd_sets.
      *
      */
-    void UpdateFdSet(fd_set &aReadFdSet, fd_set &aWriteFdSet, int &aMaxFd, struct timeval &aTimeout);
+    void UpdateFdSet(void *aMainloopContext);
 
     /**
      * This method performs radio driver processing.
      *
-     * @param[in]   aContext        The context containing fd_sets.
+     * @param[in]   aMainloopContext  A pointer to the mainloop context containing fd_sets.
      *
      */
-    void Process(const RadioProcessContext &aContext);
+    void Process(const void *aMainloopContext);
 
     /**
      * This method returns the bus speed between the host and the radio.
@@ -178,7 +173,6 @@ private:
     uint8_t *GetRealRxFrameStart(uint8_t *aSpiRxFrameBuffer, uint8_t aAlignAllowance, uint16_t &aSkipLength);
     otError  DoSpiTransfer(uint8_t *aSpiRxFrameBuffer, uint32_t aTransferLength);
     otError  PushPullSpi(void);
-    void     Process(const fd_set *aReadFdSet, const fd_set *aWriteFdSet);
 
     bool CheckInterrupt(void);
     void LogStats(void);
@@ -256,5 +250,4 @@ private:
 } // namespace Posix
 } // namespace ot
 
-#endif // OPENTHREAD_POSIX_CONFIG_RCP_BUS == OT_POSIX_RCP_BUS_SPI
 #endif // POSIX_APP_SPI_INTERFACE_HPP_
