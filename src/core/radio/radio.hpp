@@ -435,6 +435,14 @@ public:
     void SetPromiscuous(bool aEnable);
 
     /**
+     * Indicates whether radio should stay in Receive or Sleep during idle periods.
+     *
+     * @param[in]  aEnable   TRUE to keep radio in Receive, FALSE to put to Sleep during idle periods.
+     *
+     */
+    void SetRxOnWhenIdle(bool aEnable);
+
+    /**
      * Returns the current state of the radio.
      *
      * Is not required by OpenThread. It may be used for debugging and/or application-specific purposes.
@@ -733,6 +741,36 @@ public:
                 ((kChannelMin == aCslChannel) || ((kChannelMin < aCslChannel) && (aCslChannel <= kChannelMax))));
     }
 
+    /**
+     * Sets the region code.
+     *
+     * The radio region format is the 2-bytes ascii representation of the ISO 3166 alpha-2 code.
+     *
+     * @param[in]  aRegionCode  The radio region code. The `aRegionCode >> 8` is first ascii char
+     *                          and the `aRegionCode & 0xff` is the second ascii char.
+     *
+     * @retval  kErrorFailed          Other platform specific errors.
+     * @retval  kErrorNone            Successfully set region code.
+     * @retval  kErrorNotImplemented  The feature is not implemented.
+     *
+     */
+    Error SetRegion(uint16_t aRegionCode) { return otPlatRadioSetRegion(GetInstancePtr(), aRegionCode); }
+
+    /**
+     * Get the region code.
+     *
+     * The radio region format is the 2-bytes ascii representation of the ISO 3166 alpha-2 code.
+     *
+     * @param[out] aRegionCode  The radio region code. The `aRegionCode >> 8` is first ascii char
+     *                          and the `aRegionCode & 0xff` is the second ascii char.
+     *
+     * @retval  kErrorFailed          Other platform specific errors.
+     * @retval  kErrorNone            Successfully set region code.
+     * @retval  kErrorNotImplemented  The feature is not implemented.
+     *
+     */
+    Error GetRegion(uint16_t &aRegionCode) const { return otPlatRadioGetRegion(GetInstancePtr(), &aRegionCode); }
+
 private:
     otInstance *GetInstancePtr(void) const { return reinterpret_cast<otInstance *>(&InstanceLocator::GetInstance()); }
 
@@ -802,6 +840,8 @@ inline Error Radio::SetCcaEnergyDetectThreshold(int8_t aThreshold)
 inline bool Radio::GetPromiscuous(void) { return otPlatRadioGetPromiscuous(GetInstancePtr()); }
 
 inline void Radio::SetPromiscuous(bool aEnable) { otPlatRadioSetPromiscuous(GetInstancePtr(), aEnable); }
+
+inline void Radio::SetRxOnWhenIdle(bool aEnable) { otPlatRadioSetRxOnWhenIdle(GetInstancePtr(), aEnable); }
 
 inline otRadioState Radio::GetState(void) { return otPlatRadioGetState(GetInstancePtr()); }
 
@@ -943,6 +983,8 @@ inline Error Radio::SetCcaEnergyDetectThreshold(int8_t) { return kErrorNotImplem
 inline bool Radio::GetPromiscuous(void) { return false; }
 
 inline void Radio::SetPromiscuous(bool) {}
+
+inline void Radio::SetRxOnWhenIdle(bool) {}
 
 inline otRadioState Radio::GetState(void) { return OT_RADIO_STATE_DISABLED; }
 

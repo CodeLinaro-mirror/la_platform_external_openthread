@@ -91,6 +91,7 @@ exit:
     return ret;
 }
 
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
 otError otPlatInfraIfSendIcmp6Nd(uint32_t            aInfraIfIndex,
                                  const otIp6Address *aDestAddress,
                                  const uint8_t      *aBuffer,
@@ -98,6 +99,7 @@ otError otPlatInfraIfSendIcmp6Nd(uint32_t            aInfraIfIndex,
 {
     return ot::Posix::InfraNetif::Get().SendIcmp6Nd(aInfraIfIndex, *aDestAddress, aBuffer, aBufferLength);
 }
+#endif
 
 otError otPlatInfraIfDiscoverNat64Prefix(uint32_t aInfraIfIndex)
 {
@@ -110,9 +112,11 @@ otError otPlatInfraIfDiscoverNat64Prefix(uint32_t aInfraIfIndex)
 #endif
 }
 
-bool platformInfraIfIsRunning(void) { return ot::Posix::InfraNetif::Get().IsRunning(); }
+bool otSysInfraIfIsRunning(void) { return ot::Posix::InfraNetif::Get().IsRunning(); }
 
 const char *otSysGetInfraNetifName(void) { return ot::Posix::InfraNetif::Get().GetNetifName(); }
+
+uint32_t otSysGetInfraNetifIndex(void) { return ot::Posix::InfraNetif::Get().GetNetifIndex(); }
 
 uint32_t otSysGetInfraNetifFlags(void) { return ot::Posix::InfraNetif::Get().GetFlags(); }
 
@@ -123,9 +127,8 @@ void otSysCountInfraNetifAddresses(otSysInfraNetIfAddressCounters *aAddressCount
 
 namespace ot {
 namespace Posix {
-namespace {
 
-int CreateIcmp6Socket(void)
+int InfraNetif::CreateIcmp6Socket(const char *aInfraIfName)
 {
     int                 sock;
     int                 rval;
@@ -168,6 +171,13 @@ int CreateIcmp6Socket(void)
     rval = setsockopt(sock, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &kHopLimit, sizeof(kHopLimit));
     VerifyOrDie(rval == 0, OT_EXIT_ERROR_ERRNO);
 
+#ifdef __linux__
+    rval = setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, aInfraIfName, strlen(aInfraIfName));
+#else  // __NetBSD__ || __FreeBSD__ || __APPLE__
+    rval = setsockopt(mInfraIfIcmp6Socket, IPPROTO_IPV6, IPV6_BOUND_IF, &mInfraIfIndex, sizeof(mInfraIfIndex));
+#endif // __linux__
+    VerifyOrDie(rval == 0, OT_EXIT_ERROR_ERRNO);
+
     return sock;
 }
 
@@ -200,8 +210,7 @@ int CreateNetLinkSocket(void)
     return sock;
 }
 
-} // namespace
-
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
 otError InfraNetif::SendIcmp6Nd(uint32_t            aInfraIfIndex,
                                 const otIp6Address &aDestAddress,
                                 const uint8_t      *aBuffer,
@@ -275,13 +284,18 @@ otError InfraNetif::SendIcmp6Nd(uint32_t            aInfraIfIndex,
 exit:
     return error;
 }
+#endif // OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
 
-bool InfraNetif::IsRunning(void) const { return (GetFlags() & IFF_RUNNING) && HasLinkLocalAddress(); }
+bool InfraNetif::IsRunning(void) const
+{
+    return mInfraIfIndex ? ((GetFlags() & IFF_RUNNING) && HasLinkLocalAddress()) : false;
+}
 
 uint32_t InfraNetif::GetFlags(void) const
 {
     int          sock;
     struct ifreq ifReq;
+    uint32_t     flags = 0;
 
     OT_ASSERT(mInfraIfIndex != 0);
 
@@ -292,11 +306,20 @@ uint32_t InfraNetif::GetFlags(void) const
     static_assert(sizeof(ifReq.ifr_name) >= sizeof(mInfraIfName), "mInfraIfName is not of appropriate size.");
     strcpy(ifReq.ifr_name, mInfraIfName);
 
-    VerifyOrDie(ioctl(sock, SIOCGIFFLAGS, &ifReq) != -1, OT_EXIT_ERROR_ERRNO);
+    if (ioctl(sock, SIOCGIFFLAGS, &ifReq) == -1)
+    {
+#if OPENTHREAD_POSIX_CONFIG_EXIT_ON_INFRA_NETIF_LOST_ENABLE
+        otLogCritPlat("The infra link %s may be lost. Exiting.", mInfraIfName);
+        DieNow(OT_EXIT_ERROR_ERRNO);
+#endif
+        ExitNow();
+    }
+    flags = static_cast<uint32_t>(ifReq.ifr_flags);
 
+exit:
     close(sock);
 
-    return static_cast<uint32_t>(ifReq.ifr_flags);
+    return flags;
 }
 
 void InfraNetif::CountAddresses(otSysInfraNetIfAddressCounters &aAddressCounters) const
@@ -335,6 +358,20 @@ exit:
     return;
 }
 
+#if OPENTHREAD_CONFIG_BACKBONE_ROUTER_ENABLE
+void InfraNetif::HandleBackboneStateChange(otInstance *aInstance, otChangedFlags aFlags)
+{
+    OT_ASSERT(gInstance == aInstance);
+
+    OT_UNUSED_VARIABLE(aInstance);
+    OT_UNUSED_VARIABLE(aFlags);
+
+#if OPENTHREAD_POSIX_CONFIG_BACKBONE_ROUTER_MULTICAST_ROUTING_ENABLE
+    mMulticastRoutingManager.HandleStateChange(aInstance, aFlags);
+#endif
+}
+#endif
+
 bool InfraNetif::HasLinkLocalAddress(void) const
 {
     bool            hasLla  = false;
@@ -368,14 +405,27 @@ bool InfraNetif::HasLinkLocalAddress(void) const
     return hasLla;
 }
 
-void InfraNetif::Init(const char *aIfName)
+void InfraNetif::Init(void) { mNetLinkSocket = CreateNetLinkSocket(); }
+
+void InfraNetif::SetInfraNetif(const char *aIfName, int aIcmp6Socket)
 {
-    ssize_t  rval;
     uint32_t ifIndex = 0;
+
+    OT_UNUSED_VARIABLE(aIcmp6Socket);
+
+    OT_ASSERT(gInstance != nullptr);
+    VerifyOrDie(mNetLinkSocket != -1, OT_EXIT_INVALID_STATE);
+
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+    SetInfraNetifIcmp6SocketForBorderRouting(aIcmp6Socket);
+#endif
+#if OPENTHREAD_POSIX_CONFIG_BACKBONE_ROUTER_MULTICAST_ROUTING_ENABLE
+    VerifyOrDie(!mMulticastRoutingManager.IsEnabled(), OT_EXIT_INVALID_STATE);
+#endif
 
     if (aIfName == nullptr || aIfName[0] == '\0')
     {
-        otLogWarnPlat("Border Routing feature is disabled: infra/backbone interface is missing");
+        otLogWarnPlat("Border Routing/Backbone Router feature is disabled: infra interface is missing");
         ExitNow();
     }
 
@@ -389,17 +439,8 @@ void InfraNetif::Init(const char *aIfName)
         otLogCritPlat("Failed to get the index for infra interface %s", aIfName);
         DieNow(OT_EXIT_INVALID_ARGUMENTS);
     }
+
     mInfraIfIndex = ifIndex;
-
-    mInfraIfIcmp6Socket = CreateIcmp6Socket();
-#ifdef __linux__
-    rval = setsockopt(mInfraIfIcmp6Socket, SOL_SOCKET, SO_BINDTODEVICE, mInfraIfName, strlen(mInfraIfName));
-#else  // __NetBSD__ || __FreeBSD__ || __APPLE__
-    rval = setsockopt(mInfraIfIcmp6Socket, IPPROTO_IPV6, IPV6_BOUND_IF, &mInfraIfIndex, sizeof(mInfraIfIndex));
-#endif // __linux__
-    VerifyOrDie(rval == 0, OT_EXIT_ERROR_ERRNO);
-
-    mNetLinkSocket = CreateNetLinkSocket();
 
 exit:
     return;
@@ -408,10 +449,17 @@ exit:
 void InfraNetif::SetUp(void)
 {
     OT_ASSERT(gInstance != nullptr);
-    VerifyOrExit(mInfraIfIndex != 0);
+    VerifyOrExit(mNetLinkSocket != -1);
 
-    SuccessOrDie(otBorderRoutingInit(gInstance, mInfraIfIndex, platformInfraIfIsRunning()));
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+    SuccessOrDie(otBorderRoutingInit(gInstance, mInfraIfIndex, otSysInfraIfIsRunning()));
     SuccessOrDie(otBorderRoutingSetEnabled(gInstance, /* aEnabled */ true));
+#endif
+
+#if OPENTHREAD_POSIX_CONFIG_BACKBONE_ROUTER_MULTICAST_ROUTING_ENABLE
+    mMulticastRoutingManager.SetUp();
+#endif
+
     Mainloop::Manager::Get().Add(*this);
 exit:
     return;
@@ -419,21 +467,26 @@ exit:
 
 void InfraNetif::TearDown(void)
 {
-    VerifyOrExit(mInfraIfIndex != 0);
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+    IgnoreError(otBorderRoutingSetEnabled(gInstance, false));
+#endif
+
+#if OPENTHREAD_POSIX_CONFIG_BACKBONE_ROUTER_MULTICAST_ROUTING_ENABLE
+    mMulticastRoutingManager.TearDown();
+#endif
 
     Mainloop::Manager::Get().Remove(*this);
-
-exit:
-    return;
 }
 
 void InfraNetif::Deinit(void)
 {
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
     if (mInfraIfIcmp6Socket != -1)
     {
         close(mInfraIfIcmp6Socket);
         mInfraIfIcmp6Socket = -1;
     }
+#endif
 
     if (mNetLinkSocket != -1)
     {
@@ -441,16 +494,20 @@ void InfraNetif::Deinit(void)
         mNetLinkSocket = -1;
     }
 
-    mInfraIfIndex = 0;
+    mInfraIfName[0] = '\0';
+    mInfraIfIndex   = 0;
 }
 
 void InfraNetif::Update(otSysMainloopContext &aContext)
 {
-    VerifyOrExit(mInfraIfIcmp6Socket != -1);
     VerifyOrExit(mNetLinkSocket != -1);
+
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+    VerifyOrExit(mInfraIfIcmp6Socket != -1);
 
     FD_SET(mInfraIfIcmp6Socket, &aContext.mReadFdSet);
     aContext.mMaxFd = OT_MAX(aContext.mMaxFd, mInfraIfIcmp6Socket);
+#endif
 
     FD_SET(mNetLinkSocket, &aContext.mReadFdSet);
     aContext.mMaxFd = OT_MAX(aContext.mMaxFd, mNetLinkSocket);
@@ -488,7 +545,9 @@ void InfraNetif::ReceiveNetLinkMessage(void)
         case RTM_DELADDR:
         case RTM_NEWLINK:
         case RTM_DELLINK:
-            SuccessOrDie(otPlatInfraIfStateChanged(gInstance, mInfraIfIndex, platformInfraIfIsRunning()));
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+            SuccessOrDie(otPlatInfraIfStateChanged(gInstance, mInfraIfIndex, otSysInfraIfIsRunning()));
+#endif
             break;
         case NLMSG_ERROR:
         {
@@ -507,6 +566,7 @@ exit:
     return;
 }
 
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
 void InfraNetif::ReceiveIcmp6Message(void)
 {
     otError  error = OT_ERROR_NONE;
@@ -578,6 +638,7 @@ exit:
         otLogDebgPlat("Failed to handle ICMPv6 message: %s", otThreadErrorToString(error));
     }
 }
+#endif // OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
 
 #if OPENTHREAD_POSIX_CONFIG_NAT64_AIL_PREFIX_ENABLE
 const char         InfraNetif::kWellKnownIpv4OnlyName[]   = "ipv4only.arpa";
@@ -653,7 +714,9 @@ void InfraNetif::DiscoverNat64PrefixDone(union sigval sv)
         }
     }
 
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
     otPlatInfraIfDiscoverNat64PrefixDone(gInstance, Get().mInfraIfIndex, &prefix);
+#endif
 
 exit:
     freeaddrinfo(res);
@@ -663,9 +726,9 @@ exit:
 
 otError InfraNetif::DiscoverNat64Prefix(uint32_t aInfraIfIndex)
 {
-    otError          error = OT_ERROR_NONE;
-    struct addrinfo *hints = nullptr;
-    struct gaicb    *reqs[1];
+    otError          error   = OT_ERROR_NONE;
+    struct addrinfo *hints   = nullptr;
+    struct gaicb    *reqs[1] = {nullptr};
     struct sigevent  sig;
     int              status;
 
@@ -708,15 +771,35 @@ exit:
 }
 #endif // OPENTHREAD_POSIX_CONFIG_NAT64_AIL_PREFIX_ENABLE
 
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+void InfraNetif::SetInfraNetifIcmp6SocketForBorderRouting(int aIcmp6Socket)
+{
+    otBorderRoutingState state = otBorderRoutingGetState(gInstance);
+
+    VerifyOrDie(state == OT_BORDER_ROUTING_STATE_UNINITIALIZED || state == OT_BORDER_ROUTING_STATE_DISABLED,
+                OT_EXIT_INVALID_STATE);
+
+    if (mInfraIfIcmp6Socket != -1)
+    {
+        close(mInfraIfIcmp6Socket);
+    }
+    mInfraIfIcmp6Socket = aIcmp6Socket;
+}
+#endif
+
 void InfraNetif::Process(const otSysMainloopContext &aContext)
 {
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
     VerifyOrExit(mInfraIfIcmp6Socket != -1);
+#endif
     VerifyOrExit(mNetLinkSocket != -1);
 
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
     if (FD_ISSET(mInfraIfIcmp6Socket, &aContext.mReadFdSet))
     {
         ReceiveIcmp6Message();
     }
+#endif
 
     if (FD_ISSET(mNetLinkSocket, &aContext.mReadFdSet))
     {

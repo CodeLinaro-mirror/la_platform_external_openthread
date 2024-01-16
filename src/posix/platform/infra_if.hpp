@@ -37,6 +37,7 @@
 #include <openthread/nat64.h>
 #include <openthread/openthread-system.h>
 
+#include "multicast_routing.hpp"
 #include "core/common/non_copyable.hpp"
 #include "posix/platform/mainloop.hpp"
 
@@ -71,12 +72,22 @@ public:
     /**
      * Initializes the infrastructure network interface.
      *
+     * To specify the infrastructure network interface, you need to call SetInfraNetif() after Init().
+     *
      * @note This method is called before OpenThread instance is created.
      *
-     * @param[in]  aIfName      A pointer to infrastructure network interface name.
+     */
+    void Init(void);
+
+    /**
+     * Sets the infrastructure network interface.
+     *
+     * @param[in]  aIfName       A pointer to infrastructure network interface name.
+     * @param[in]  aIcmp6Socket  A SOCK_RAW socket for sending/receiving ICMPv6 messages. If you don't need border
+     *                           routing feature, you can pass in -1.
      *
      */
-    void Init(const char *aIfName);
+    void SetInfraNetif(const char *aIfName, int aIcmp6Socket);
 
     /**
      * Sets up the infrastructure network interface.
@@ -125,6 +136,15 @@ public:
     void CountAddresses(otSysInfraNetIfAddressCounters &aAddressCounters) const;
 
     /**
+     * Handles the backbone state change events.
+     *
+     * @param[in] aInstance  A pointer to the OpenThread instance.
+     * @param[in] aFlags     Flags that denote the state change events.
+     *
+     */
+    void HandleBackboneStateChange(otInstance *aInstance, otChangedFlags aFlags);
+
+    /**
      * Sends an ICMPv6 Neighbor Discovery message on given infrastructure interface.
      *
      * See RFC 4861: https://tools.ietf.org/html/rfc4861.
@@ -168,12 +188,30 @@ public:
     const char *GetNetifName(void) const { return (mInfraIfIndex != 0) ? mInfraIfName : nullptr; }
 
     /**
+     * Gets the infrastructure network interface index.
+     *
+     * @returns The infrastructure network interface index.
+     *
+     */
+    uint32_t GetNetifIndex(void) const { return mInfraIfIndex; }
+
+    /**
      * Gets the infrastructure network interface singleton.
      *
      * @returns The singleton object.
      *
      */
     static InfraNetif &Get(void);
+
+    /**
+     * Creates a socket for sending/receiving ICMPv6 messages.
+     *
+     * @param[in] aInfraIfName  The infrastructure network interface name.
+     *
+     * @returns The file descriptor of the socket.
+     *
+     */
+    static int CreateIcmp6Socket(const char *aInfraIfName);
 
 private:
     static const char         kWellKnownIpv4OnlyName[];   // "ipv4only.arpa"
@@ -182,14 +220,22 @@ private:
     static const uint8_t      kValidNat64PrefixLength[];
 
     char     mInfraIfName[IFNAMSIZ];
-    uint32_t mInfraIfIndex       = 0;
-    int      mInfraIfIcmp6Socket = -1;
-    int      mNetLinkSocket      = -1;
+    uint32_t mInfraIfIndex  = 0;
+    int      mNetLinkSocket = -1;
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+    int mInfraIfIcmp6Socket = -1;
+#endif
+#if OPENTHREAD_POSIX_CONFIG_BACKBONE_ROUTER_MULTICAST_ROUTING_ENABLE
+    MulticastRoutingManager mMulticastRoutingManager;
+#endif
 
     void        ReceiveNetLinkMessage(void);
-    void        ReceiveIcmp6Message(void);
     bool        HasLinkLocalAddress(void) const;
     static void DiscoverNat64PrefixDone(union sigval sv);
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+    void SetInfraNetifIcmp6SocketForBorderRouting(int aIcmp6Socket);
+    void ReceiveIcmp6Message(void);
+#endif
 };
 
 } // namespace Posix
