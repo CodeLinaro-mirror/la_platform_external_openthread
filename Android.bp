@@ -27,6 +27,7 @@
 //
 
 package {
+    default_team: "trendy_team_fwk_thread_network",
     default_applicable_licenses: ["external_openthread_license"],
 }
 
@@ -69,7 +70,7 @@ license {
 }
 
 cc_defaults {
-    name : "ot_posix_cflags_defaults",
+    name: "ot_posix_cflags_defaults",
     cflags: [
         "-DMBEDTLS_CONFIG_FILE=\"mbedtls-config.h\"",
         "-DOPENTHREAD_CONFIG_FILE=\"src/android/openthread-android-config.h\"",
@@ -99,23 +100,6 @@ genrule {
     tool_files: [
         "src/android/config-android-version-gen.sh",
     ],
-}
-
-soong_config_module_type {
-    name: "ot_config_cc_defaults",
-    module_type: "cc_defaults",
-    config_namespace: "openthread",
-    bool_variables: ["diag"],
-    properties: ["cflags"],
-}
-
-ot_config_cc_defaults {
-    name: "ot_config_defaults",
-    soong_config_variables: {
-        diag: {
-            cflags: ["-DOPENTHREAD_CONFIG_DIAG_ENABLE=1"],
-        },
-    },
 }
 
 filegroup {
@@ -482,10 +466,9 @@ filegroup {
 
 cc_library_static {
     name: "ot-core",
-    apex_available: [ "com.android.tethering" ],
+    apex_available: ["com.android.tethering"],
     min_sdk_version: "30",
     defaults: [
-        "ot_config_defaults",
         "ot-daemon-debuggable-cc-defaults",
         "ot_posix_cflags_defaults",
     ],
@@ -549,10 +532,9 @@ cc_library_static {
 
 cc_library_static {
     name: "libopenthread-cli",
-    apex_available: [ "com.android.tethering" ],
+    apex_available: ["com.android.tethering"],
     min_sdk_version: "30",
     defaults: [
-        "ot_config_defaults",
         "ot-daemon-debuggable-cc-defaults",
         "ot_posix_cflags_defaults",
     ],
@@ -603,7 +585,6 @@ cc_library_static {
 
 cc_binary {
     name: "ot-ctl",
-    vendor: true,
     defaults: ["ot_posix_cflags_defaults"],
     generated_headers: ["ot_version_header"],
 
@@ -630,7 +611,7 @@ cc_defaults {
 }
 
 cc_defaults {
-    name : "ot_simulation_cflags_defaults",
+    name: "ot_simulation_cflags_defaults",
 
     local_include_dirs: [
         "examples/platforms/simulation",
@@ -654,6 +635,7 @@ cc_defaults {
     cflags: [
         "-DMBEDTLS_CONFIG_FILE=\"mbedtls-config.h\"",
         "-DOPENTHREAD_CONFIG_ANDROID_VERSION_HEADER_ENABLE=1",
+        "-DOPENTHREAD_CONFIG_DIAG_ENABLE=1",
         "-DOPENTHREAD_CONFIG_DNS_CLIENT_ENABLE=1",
         "-DOPENTHREAD_CONFIG_ECDSA_ENABLE=1",
         "-DOPENTHREAD_CONFIG_FILE=\"openthread-config-android-version.h\"",
@@ -847,7 +829,6 @@ cc_library_static {
         "src/lib/platform/exit_code.c",
     ],
 }
-
 
 cc_library_static {
     name: "openthread-spinel-rcp",
