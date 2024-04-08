@@ -107,7 +107,7 @@ int Daemon::OutputFormatV(const char *aFormat, va_list aArguments)
 
     VerifyOrExit(mSessionSocket != -1);
 
-#if defined(__linux__)
+#ifdef __linux__
     // Don't die on SIGPIPE
     rval = send(mSessionSocket, buf, static_cast<size_t>(rval), MSG_NOSIGNAL);
 #else
@@ -184,6 +184,7 @@ void Daemon::createListenSocketOrDie(void)
     // This returns the init-managed stream socket which is already bind to
     // /dev/socket/ot-daemon/<interface-name>.sock
     mListenSocket = android_get_control_socket(socketFile);
+
     if (mListenSocket == -1)
     {
         DieNowWithMessage("android_get_control_socket", OT_EXIT_ERROR_ERRNO);
@@ -284,18 +285,13 @@ void Daemon::SetUp(void)
         DieNowWithMessage("listen", OT_EXIT_ERROR_ERRNO);
     }
 
+exit:
 #if OPENTHREAD_POSIX_CONFIG_DAEMON_CLI_ENABLE
-    otCliInit(
-        gInstance,
-        [](void *aContext, const char *aFormat, va_list aArguments) -> int {
-            return static_cast<Daemon *>(aContext)->OutputFormatV(aFormat, aArguments);
-        },
-        this);
+    otSysCliInitUsingDaemon(gInstance);
 #endif
 
     Mainloop::Manager::Get().Add(*this);
 
-exit:
     return;
 }
 
