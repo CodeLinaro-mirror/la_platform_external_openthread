@@ -690,7 +690,7 @@ template <> otError NcpBase::HandlePropertySet<SPINEL_PROP_NET_KEY_SWITCH_GUARDT
 
     SuccessOrExit(error = mDecoder.ReadUint32(keyGuardTime));
 
-    otThreadSetKeySwitchGuardTime(mInstance, keyGuardTime);
+    otThreadSetKeySwitchGuardTime(mInstance, static_cast<uint16_t>(keyGuardTime));
 
 exit:
     return error;
@@ -4550,6 +4550,24 @@ template <> otError NcpBase::HandlePropertySet<SPINEL_PROP_PHY_PCAP_ENABLED>(voi
 
 exit:
     return error;
+}
+
+template <> otError NcpBase::HandlePropertyGet<SPINEL_PROP_NET_LEAVE_GRACEFULLY>(void) { return OT_ERROR_NONE; }
+
+template <> otError NcpBase::HandlePropertySet<SPINEL_PROP_NET_LEAVE_GRACEFULLY>(void)
+{
+    return otThreadDetachGracefully(mInstance, ThreadDetachGracefullyHandler, this);
+}
+
+void NcpBase::ThreadDetachGracefullyHandler(void *aContext)
+{
+    static_cast<NcpBase *>(aContext)->ThreadDetachGracefullyHandler();
+}
+
+void NcpBase::ThreadDetachGracefullyHandler(void)
+{
+    mChangedPropsSet.AddProperty(SPINEL_PROP_NET_LEAVE_GRACEFULLY);
+    mUpdateChangedPropsTask.Post();
 }
 
 // ----------------------------------------------------------------------------

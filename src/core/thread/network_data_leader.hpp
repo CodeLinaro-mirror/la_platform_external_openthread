@@ -168,19 +168,17 @@ public:
      * @param[in]  aStableVersion  The Stable Version value.
      * @param[in]  aType           The Network Data type to set, the full set or stable subset.
      * @param[in]  aMessage        A reference to the message.
-     * @param[in]  aOffset         The offset in @p aMessage pointing to start of Network Data.
-     * @param[in]  aLength         The length of Network Data.
+     * @param[in]  aOffsetRange    The offset range in @p aMessage to read from.
      *
      * @retval kErrorNone   Successfully set the network data.
      * @retval kErrorParse  Network Data in @p aMessage is not valid.
      *
      */
-    Error SetNetworkData(uint8_t        aVersion,
-                         uint8_t        aStableVersion,
-                         Type           aType,
-                         const Message &aMessage,
-                         uint16_t       aOffset,
-                         uint16_t       aLength);
+    Error SetNetworkData(uint8_t            aVersion,
+                         uint8_t            aStableVersion,
+                         Type               aType,
+                         const Message     &aMessage,
+                         const OffsetRange &aOffsetRange);
 
     /**
      * Gets the Commissioning Dataset from Network Data.
@@ -421,20 +419,23 @@ public:
      */
     const ServiceTlv *FindServiceById(uint8_t aServiceId) const;
 
-#if OPENTHREAD_FTD && OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+#endif // OPENTHREAD_FTD
+
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
     /**
-     * Indicates whether a given Prefix can act as a valid OMR prefix and exists in the network data.
+     * Indicates whether Network Data contains a valid OMR prefix.
+     *
+     * If the given @p aPrefix is itself not a valid OMR prefix, this method will return `false`, regardless of
+     * whether the prefix is present in the Network Data.
      *
      * @param[in]  aPrefix   The OMR prefix to check.
      *
-     * @retval TRUE  If @p aPrefix is a valid OMR prefix and Network Data contains @p aPrefix.
-     * @retval FALSE Otherwise.
+     * @retval TRUE   Network Data contains a valid OMR prefix entry matching @p aPrefix.
+     * @retval FALSE  Network Data does not contain a valid OMR prefix entry matching @p aPrefix.
      *
      */
-    bool ContainsOmrPrefix(const Ip6::Prefix &aPrefix);
+    bool ContainsOmrPrefix(const Ip6::Prefix &aPrefix) const;
 #endif
-
-#endif // OPENTHREAD_FTD
 
 private:
     using FilterIndexes = MeshCoP::SteeringData::HashBitIndexes;
