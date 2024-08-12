@@ -274,6 +274,7 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 #define OPENTHREAD_CONFIG_UDP_FORWARD_ENABLE 0
 
 #define OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE 1
+#define OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE 1
 #define OPENTHREAD_CONFIG_BORDER_AGENT_ID_ENABLE 1
 #define OPENTHREAD_CONFIG_BORDER_ROUTER_ENABLE 1
 #define OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE 1
@@ -324,9 +325,6 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 // Power calibration on RCP is not needed.
 #define OPENTHREAD_CONFIG_POWER_CALIBRATION_ENABLE 0
 
-// Enable aborting the host when receiving unexpected reset from RCP.
-#define OPENTHREAD_SPINEL_CONFIG_ABORT_ON_UNEXPECTED_RCP_RESET_ENABLE 1
-
 // Disable the support for locally initializing an Active Operational Dataset.
 #define OPENTHREAD_CONFIG_OPERATIONAL_DATASET_AUTO_INIT 0
 
@@ -335,9 +333,6 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 
 // Disable BLE secure support.
 #define OPENTHREAD_CONFIG_CLI_BLE_SECURE_ENABLE 0
-
-// Set the interval (in units of microseconds) for host-rcp time sync to 10 seconds.
-#define OPENTHREAD_SPINEL_CONFIG_RCP_TIME_SYNC_INTERVAL (10 * 1000 * 1000)
 
 // Enable tracking the uptime of OpenThread instance.
 #define OPENTHREAD_CONFIG_UPTIME_ENABLE 1

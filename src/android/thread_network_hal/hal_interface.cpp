@@ -43,6 +43,8 @@
 #include <android/binder_manager.h>
 #include <android/binder_process.h>
 
+#include "common/code_utils.hpp"
+
 namespace ot {
 namespace Posix {
 using ::aidl::android::hardware::threadnetwork::IThreadChip;

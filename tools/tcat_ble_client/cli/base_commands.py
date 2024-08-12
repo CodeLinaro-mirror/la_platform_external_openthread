@@ -27,7 +27,7 @@
 """
 
 from ble.ble_connection_constants import BBTC_SERVICE_UUID, BBTC_TX_CHAR_UUID, \
-    BBTC_RX_CHAR_UUID, SERVER_COMMON_NAME
+    BBTC_RX_CHAR_UUID
 from ble.ble_stream import BleStream
 from ble.ble_stream_secure import BleStreamSecure
 from ble import ble_scanner
@@ -80,6 +80,22 @@ class CommissionCommand(Command):
         print('Commissioning...')
         dataset_bytes = dataset.to_bytes()
         data = TLV(TcatTLVType.ACTIVE_DATASET.value, dataset_bytes).to_bytes()
+        response = await bless.send_with_resp(data)
+        if not response:
+            return
+        tlv_response = TLV.from_bytes(response)
+        return CommandResultTLV(tlv_response)
+
+
+class DecommissionCommand(Command):
+
+    def get_help_string(self) -> str:
+        return 'Stop Thread interface and decommission device from current network.'
+
+    async def execute_default(self, args, context):
+        bless: BleStreamSecure = context['ble_sstream']
+        print('Disabling Thread and decommissioning device...')
+        data = (TLV(TcatTLVType.DECOMMISSION.value, bytes()).to_bytes())
         response = await bless.send_with_resp(data)
         if not response:
             return
@@ -160,6 +176,6 @@ class ScanCommand(Command):
         )
 
         print('Setting up secure channel...')
-        await ble_sstream.do_handshake(hostname=SERVER_COMMON_NAME)
+        await ble_sstream.do_handshake()
         print('Done')
         context['ble_sstream'] = ble_sstream
