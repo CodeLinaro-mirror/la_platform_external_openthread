@@ -105,3 +105,6 @@
 
 // Disable backtrace support as Android already has support for dumping backtrace after crash.
 #define OPENTHREAD_POSIX_CONFIG_BACKTRACE_ENABLE 0
+
+// Enable for Android platform.
+#define OPENTHREAD_POSIX_CONFIG_ANDROID_ENABLE 1

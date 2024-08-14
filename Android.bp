@@ -74,6 +74,7 @@ cc_defaults {
     cflags: [
         "-DMBEDTLS_CONFIG_FILE=\"mbedtls-config.h\"",
         "-DOPENTHREAD_CONFIG_FILE=\"src/android/openthread-android-config.h\"",
+        "-DOPENTHREAD_PROJECT_LIB_CONFIG_FILE=\"src/android/openthread-android-spinel-config.h\"",
         "-DOPENTHREAD_FTD=1",
         "-DOPENTHREAD_POSIX=1",
         "-DOPENTHREAD_POSIX_CONFIG_DAEMON_ENABLE=1",
@@ -158,6 +159,7 @@ filegroup {
         "src/core/api/thread_ftd_api.cpp",
         "src/core/api/trel_api.cpp",
         "src/core/api/udp_api.cpp",
+        "src/core/api/verhoeff_checksum_api.cpp",
         "src/core/backbone_router/backbone_tmf.cpp",
         "src/core/backbone_router/bbr_leader.cpp",
         "src/core/backbone_router/bbr_local.cpp",
@@ -182,6 +184,7 @@ filegroup {
         "src/core/common/log.cpp",
         "src/core/common/message.cpp",
         "src/core/common/notifier.cpp",
+        "src/core/common/offset_range.cpp",
         "src/core/common/preference.cpp",
         "src/core/common/random.cpp",
         "src/core/common/settings.cpp",
@@ -217,7 +220,6 @@ filegroup {
         "src/core/meshcop/border_agent.cpp",
         "src/core/meshcop/commissioner.cpp",
         "src/core/meshcop/dataset.cpp",
-        "src/core/meshcop/dataset_local.cpp",
         "src/core/meshcop/dataset_manager.cpp",
         "src/core/meshcop/dataset_manager_ftd.cpp",
         "src/core/meshcop/dataset_updater.cpp",
@@ -324,6 +326,7 @@ filegroup {
         "src/core/utils/power_calibration.cpp",
         "src/core/utils/slaac_address.cpp",
         "src/core/utils/srp_client_buffers.cpp",
+        "src/core/utils/verhoeff_checksum.cpp",
     ],
 }
 
@@ -395,6 +398,7 @@ filegroup {
         "third_party/mbedtls/repo/library/asn1parse.c",
         "third_party/mbedtls/repo/library/asn1write.c",
         "third_party/mbedtls/repo/library/base64.c",
+        "third_party/mbedtls/repo/library/bignum_core.c",
         "third_party/mbedtls/repo/library/bignum.c",
         "third_party/mbedtls/repo/library/ccm.c",
         "third_party/mbedtls/repo/library/cipher.c",
@@ -416,6 +420,7 @@ filegroup {
         "third_party/mbedtls/repo/library/oid.c",
         "third_party/mbedtls/repo/library/pem.c",
         "third_party/mbedtls/repo/library/pk.c",
+        "third_party/mbedtls/repo/library/pk_ecc.c",
         "third_party/mbedtls/repo/library/pk_wrap.c",
         "third_party/mbedtls/repo/library/pkparse.c",
         "third_party/mbedtls/repo/library/pkwrite.c",
@@ -423,12 +428,14 @@ filegroup {
         "third_party/mbedtls/repo/library/platform_util.c",
         "third_party/mbedtls/repo/library/sha256.c",
         "third_party/mbedtls/repo/library/ssl_ciphersuites.c",
-        "third_party/mbedtls/repo/library/ssl_cli.c",
+        "third_party/mbedtls/repo/library/ssl_client.c",
         "third_party/mbedtls/repo/library/ssl_cookie.c",
         "third_party/mbedtls/repo/library/ssl_msg.c",
-        "third_party/mbedtls/repo/library/ssl_srv.c",
         "third_party/mbedtls/repo/library/ssl_ticket.c",
         "third_party/mbedtls/repo/library/ssl_tls.c",
+        "third_party/mbedtls/repo/library/ssl_tls12_client.c",
+        "third_party/mbedtls/repo/library/ssl_tls12_server.c",
+        "third_party/mbedtls/repo/library/ssl_tls13_client.c",
         "third_party/mbedtls/repo/library/threading.c",
         "third_party/mbedtls/repo/library/x509.c",
         "third_party/mbedtls/repo/library/x509_crt.c",
@@ -456,9 +463,11 @@ filegroup {
         "src/posix/platform/power.cpp",
         "src/posix/platform/radio.cpp",
         "src/posix/platform/radio_url.cpp",
+        "src/posix/platform/rcp_caps_diag.cpp",
         "src/posix/platform/resolver.cpp",
         "src/posix/platform/settings.cpp",
         "src/posix/platform/spi_interface.cpp",
+        "src/posix/platform/spinel_manager.cpp",
         "src/posix/platform/system.cpp",
         "src/posix/platform/trel.cpp",
         "src/posix/platform/udp.cpp",
@@ -504,6 +513,7 @@ cc_library_static {
         // It's safe to suppress this warning because ot-daemon will never
         // run below Android U (34).
         "-Wno-unguarded-availability",
+        "-Wno-c99-extensions",
     ],
 
     vintf_fragments: ["src/android/thread_network_hal/device_manifest.xml"],
@@ -528,6 +538,7 @@ cc_library_static {
         "src/lib/spinel/spinel.c",
         "src/lib/spinel/spinel_buffer.cpp",
         "src/lib/spinel/spinel_decoder.cpp",
+        "src/lib/spinel/spinel_driver.cpp",
         "src/lib/spinel/spinel_encoder.cpp",
         "src/lib/url/url.cpp",
     ],
@@ -563,6 +574,7 @@ cc_library_static {
     cppflags: [
         "-std=c++11",
         "-pedantic-errors",
+        "-Wno-c99-extensions",
     ],
 
     srcs: [
@@ -682,6 +694,7 @@ cc_library_static {
         "third_party/mbedtls/repo/library/asn1parse.c",
         "third_party/mbedtls/repo/library/asn1write.c",
         "third_party/mbedtls/repo/library/base64.c",
+        "third_party/mbedtls/repo/library/bignum_core.c",
         "third_party/mbedtls/repo/library/bignum.c",
         "third_party/mbedtls/repo/library/ccm.c",
         "third_party/mbedtls/repo/library/cipher.c",
@@ -855,6 +868,7 @@ cc_library_static {
         "src/lib/spinel/spinel.c",
         "src/lib/spinel/spinel_buffer.cpp",
         "src/lib/spinel/spinel_decoder.cpp",
+        "src/lib/spinel/spinel_driver.cpp",
         "src/lib/spinel/spinel_encoder.cpp",
     ],
 }
@@ -938,6 +952,7 @@ cc_library_static {
         "src/posix/platform/mainloop.cpp",
         "src/posix/platform/hdlc_interface.cpp",
         "src/posix/platform/radio_url.cpp",
+        "src/posix/platform/rcp_caps_diag.cpp",
     ],
 }
 
