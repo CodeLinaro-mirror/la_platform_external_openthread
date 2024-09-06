@@ -163,9 +163,16 @@ public:
      * @param[in]  aSoftwareReset              When doing RCP recovery, TRUE to try software reset first, FALSE to
      *                                         directly do a hardware reset.
      * @param[in]  aSpinelDriver               A pointer to the spinel driver instance that this object depends on.
+     * @param[in]  aRequiredRadioCaps          The required radio capabilities. RadioSpinel will check if RCP has
+     *                                         the required capabilities during initiailization.
+     * @param[in]  aEnableRcpTimeSync          TRUE to enable RCP time sync, FALSE to not enable.
      *
      */
-    void Init(bool aSkipRcpCompatibilityCheck, bool aSoftwareReset, SpinelDriver *aSpinelDriver);
+    void Init(bool          aSkipRcpCompatibilityCheck,
+              bool          aSoftwareReset,
+              SpinelDriver *aSpinelDriver,
+              otRadioCaps   aRequiredRadioCaps,
+              bool          aEnableRcpTimeSync);
 
     /**
      * This method sets the notification callbacks.
@@ -1085,6 +1092,14 @@ public:
     void SetVendorRestorePropertiesCallback(otRadioSpinelVendorRestorePropertiesCallback aCallback, void *aContext);
 #endif // OPENTHREAD_SPINEL_CONFIG_VENDOR_HOOK_ENABLE
 
+    /**
+     * Enables or disables the time synchronization between the host and RCP.
+     *
+     * @param[in]  aOn  TRUE to turn on the time synchronization, FALSE otherwise.
+     *
+     */
+    void SetTimeSyncState(bool aOn) { mTimeSyncOn = aOn; }
+
 private:
     enum
     {
@@ -1115,7 +1130,7 @@ private:
     SpinelDriver &GetSpinelDriver(void) const;
 
     otError CheckSpinelVersion(void);
-    otError CheckRadioCapabilities(void);
+    otError CheckRadioCapabilities(otRadioCaps aRequiredRadioCaps);
     otError CheckRcpApiVersion(bool aSupportsRcpApiVersion, bool aSupportsRcpMinHostApiVersion);
     void    InitializeCaps(bool &aSupportsRcpApiVersion, bool &aSupportsRcpMinHostApiVersion);
 
@@ -1319,6 +1334,9 @@ private:
     otRadioSpinelVendorRestorePropertiesCallback mVendorRestorePropertiesCallback;
     void                                        *mVendorRestorePropertiesContext;
 #endif
+
+    bool mTimeSyncEnabled : 1;
+    bool mTimeSyncOn : 1;
 
     SpinelDriver *mSpinelDriver;
 };
