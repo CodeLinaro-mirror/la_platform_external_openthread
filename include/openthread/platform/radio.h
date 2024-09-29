@@ -127,16 +127,17 @@ typedef uint16_t otRadioCaps;
  */
 enum
 {
-    OT_RADIO_CAPS_NONE             = 0,      ///< Radio supports no capability.
-    OT_RADIO_CAPS_ACK_TIMEOUT      = 1 << 0, ///< Radio supports AckTime event.
-    OT_RADIO_CAPS_ENERGY_SCAN      = 1 << 1, ///< Radio supports Energy Scans.
-    OT_RADIO_CAPS_TRANSMIT_RETRIES = 1 << 2, ///< Radio supports tx retry logic with collision avoidance (CSMA).
-    OT_RADIO_CAPS_CSMA_BACKOFF     = 1 << 3, ///< Radio supports CSMA backoff for frame transmission (but no retry).
-    OT_RADIO_CAPS_SLEEP_TO_TX      = 1 << 4, ///< Radio supports direct transition from sleep to TX with CSMA.
-    OT_RADIO_CAPS_TRANSMIT_SEC     = 1 << 5, ///< Radio supports tx security.
-    OT_RADIO_CAPS_TRANSMIT_TIMING  = 1 << 6, ///< Radio supports tx at specific time.
-    OT_RADIO_CAPS_RECEIVE_TIMING   = 1 << 7, ///< Radio supports rx at specific time.
-    OT_RADIO_CAPS_RX_ON_WHEN_IDLE  = 1 << 8, ///< Radio supports RxOnWhenIdle handling.
+    OT_RADIO_CAPS_NONE                 = 0,      ///< Radio supports no capability.
+    OT_RADIO_CAPS_ACK_TIMEOUT          = 1 << 0, ///< Radio supports AckTime event.
+    OT_RADIO_CAPS_ENERGY_SCAN          = 1 << 1, ///< Radio supports Energy Scans.
+    OT_RADIO_CAPS_TRANSMIT_RETRIES     = 1 << 2, ///< Radio supports tx retry logic with collision avoidance (CSMA).
+    OT_RADIO_CAPS_CSMA_BACKOFF         = 1 << 3, ///< Radio supports CSMA backoff for frame transmission (but no retry).
+    OT_RADIO_CAPS_SLEEP_TO_TX          = 1 << 4, ///< Radio supports direct transition from sleep to TX with CSMA.
+    OT_RADIO_CAPS_TRANSMIT_SEC         = 1 << 5, ///< Radio supports tx security.
+    OT_RADIO_CAPS_TRANSMIT_TIMING      = 1 << 6, ///< Radio supports tx at specific time.
+    OT_RADIO_CAPS_RECEIVE_TIMING       = 1 << 7, ///< Radio supports rx at specific time.
+    OT_RADIO_CAPS_RX_ON_WHEN_IDLE      = 1 << 8, ///< Radio supports RxOnWhenIdle handling.
+    OT_RADIO_CAPS_TRANSMIT_FRAME_POWER = 1 << 9, ///< Radio supports setting per-frame transmit power.
 };
 
 #define OT_PANID_BROADCAST 0xffff ///< IEEE 802.15.4 Broadcast PAN ID
@@ -314,6 +315,25 @@ typedef struct otRadioFrame
              *
              */
             uint8_t mRxChannelAfterTxDone;
+
+            /**
+             * The transmit power in dBm.
+             *
+             * If the platform layer does not provide `OT_RADIO_CAPS_TRANSMIT_FRAME_POWER` capability, it can ignore
+             * this value.
+             *
+             * If the value is OT_RADIO_POWER_INVALID, then the platform should ignore this value and transmit the frame
+             * with its default transmit power.
+             *
+             * Otherwise, the platform should transmit this frame with the maximum power no larger than minimal of the
+             * following values:
+             *     1. mTxPower,
+             *     2. The power limit set by otPlatRadioSetChannelTargetPower(),
+             *     3. The power limit set by otPlatRadioSetChannelMaxTransmitPower(),
+             *     4. The power limit set by otPlatRadioSetRegion().
+             *
+             */
+            int8_t mTxPower;
 
             /**
              * Indicates whether frame counter and CSL IEs are properly updated in the header.
@@ -1360,16 +1380,19 @@ otError otPlatRadioClearCalibratedPowers(otInstance *aInstance);
  * @note This API is an optional radio platform API. It's up to the platform layer to implement it.
  *       If this API is implemented, the function `otPlatRadioSetTransmitPower()` should be disabled.
  *
- * The radio driver should set the actual output power to be less than or equal to the target power and as close
- * as possible to the target power.
+ * The radio driver should set the actual output power to be less than or equal to the @p aTargetPower and as close
+ * as possible to the @p aTargetPower. If the @p aTargetPower is lower than the minimum output power supported
+ * by the platform, the output power should be set to the minimum output power supported by the platform.  If the
+ * @p aTargetPower is higher than the maximum output power supported by the platform, the output power should be
+ * set to the maximum output power supported by the platform. If the @p aTargetPower is set to `INT16_MAX`, the
+ * corresponding channel is disabled.
  *
  * @param[in]  aInstance     The OpenThread instance structure.
  * @param[in]  aChannel      The radio channel.
- * @param[in]  aTargetPower  The target power in 0.01dBm. Passing `INT16_MAX` will disable this channel to use the
- *                           target power.
+ * @param[in]  aTargetPower  The target power in 0.01dBm.
  *
  * @retval  OT_ERROR_NONE             Successfully set the target power.
- * @retval  OT_ERROR_INVALID_ARGS     The @p aChannel or @p aTargetPower is invalid.
+ * @retval  OT_ERROR_INVALID_ARGS     The @p aChannel is invalid.
  * @retval  OT_ERROR_NOT_IMPLEMENTED  The feature is not implemented.
  *
  */

@@ -535,11 +535,12 @@ cc_library_static {
         "src/lib/platform/exit_code.c",
         "src/lib/spinel/logger.cpp",
         "src/lib/spinel/radio_spinel.cpp",
-        "src/lib/spinel/spinel.c",
         "src/lib/spinel/spinel_buffer.cpp",
         "src/lib/spinel/spinel_decoder.cpp",
         "src/lib/spinel/spinel_driver.cpp",
         "src/lib/spinel/spinel_encoder.cpp",
+        "src/lib/spinel/spinel_helper.cpp",
+        "src/lib/spinel/spinel.c",
         "src/lib/url/url.cpp",
     ],
 }
