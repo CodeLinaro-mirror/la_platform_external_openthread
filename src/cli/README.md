@@ -453,6 +453,33 @@ Disables callback from Border Agent for ephemeral key state changes.
 Done
 ```
 
+### ba counters
+
+Get the border agent counter values.
+
+Note that it requires `OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE` to output the ePSKc counters.
+
+```bash
+> ba counters
+epskcActivation: 2
+epskcApiDeactivation: 1
+epskcTimeoutDeactivation: 1
+epskcMaxAttemptDeactivation: 0
+epskcDisconnectDeactivation: 0
+epskcInvalidBaStateError: 1
+epskcInvalidArgsError: 1
+epskcStartSecureSessionError: 0
+epskcSecureSessionSuccess: 0
+epskcSecureSessionFailure: 0
+epskcCommissionerPetition: 0
+pskcSecureSessionSuccess: 0
+pskcSecureSessionFailure: 0
+pskcCommissionerPetition: 0
+mgmtActiveGet: 0
+mgmtPendingGet: 0
+Done
+```
+
 ### bufferinfo
 
 Show the current message buffer information.
@@ -1284,7 +1311,7 @@ Done
 >
 ```
 
-### dns config \[DNS server IP\] \[DNS server port\] \[response timeout (ms)\] \[max tx attempts\] \[recursion desired (boolean)\] \[service mode]
+### dns config \[DNS server IP\] \[DNS server port\] \[response timeout (ms)\] \[max tx attempts\] \[recursion desired (boolean)\] \[service mode] \[protocol]
 
 Set the default query config.
 
@@ -1322,9 +1349,28 @@ Done
 
 > dns config
 Server: [fd00:0:0:0:0:0:0:2]:53
-ResponseTimeout: 3000 ms
+ResponseTimeout: 6000 ms
 MaxTxAttempts: 3
 RecursionDesired: yes
+Nat64Mode: allow
+TransportProtocol: udp
+Done
+```
+
+This final example shows how only 'recursion desired' and the service mode are set, and all other parameters are set to their defaults:
+
+```bash
+> dns config :: 0 0 0 1 srv_txt_sep
+Done
+
+> dns config
+Server: [2001:4860:4860:0:0:0:0:8888]:53
+ResponseTimeout: 6000 ms
+MaxTxAttempts: 3
+RecursionDesired: yes
+ServiceMode: srv_txt_sep
+Nat64Mode: allow
+TransportProtocol: udp
 Done
 ```
 
@@ -1426,6 +1472,27 @@ Send a service instance resolution DNS query for a given service instance with a
 Service instance label is provided first, followed by the service name (note that service instance label can contain dot '.' character).
 
 The parameters after `service-name` are optional. Any unspecified (or zero) value for these optional parameters is replaced by the value from the current default config (`dns config`).
+
+### dns server upstream \[enable|disable\]
+
+Enable/Disable the upstream DNS feature. If no argument is provided, it prints whether the upstream DNS feature is enabled.
+
+`OPENTHREAD_CONFIG_DNS_UPSTREAM_QUERY_ENABLE` is required.
+
+Enable the upstream DNS feature.
+
+```
+> dns server upstream enable
+Done
+```
+
+Get whether the upstream DNS feature is enabled.
+
+```
+> dns server upstream
+Enabled
+Done
+```
 
 ### dns compression \[enable|disable\]
 
@@ -3610,12 +3677,45 @@ offline, disabled, detached, child, router or leader
 Done
 ```
 
-### state <state>
+### state leader
 
-Try to switch to state `detached`, `child`, `router` or `leader`.
+Become a leader and start a new partition
+
+If the device is not attached, this command will force the device to start as the leader of the network. This use case is only intended for testing and demo purposes, and using the API while the device is detached can make a production application non-compliant with the Thread Specification.
+
+If the device is already attached, this API can be used to try to take over as the leader, creating a new partition. For this to work, the local leader weight (`leaderweight`) must be larger than the weight of the current leader (from `leaderdata`). If it is not, error `NotCapable` is outputted to indicate to the caller that they need to adjust the weight.
+
+Taking over the leader role in this way is only allowed when triggered by an explicit user action. Using this API without such user action can make a production application non-compliant with the Thread Specification.
 
 ```bash
+> leaderdata
+Partition ID: 1886755069
+Weighting: 65
+Data Version: 178
+Stable Data Version: 48
+Leader Router ID: 59
+Done
+
+> leaderweight
+64
+Done
+
 > state leader
+Error 27: NotCapable
+
+> leaderweight 66
+Done
+
+> state leader
+Done
+```
+
+### state <state>
+
+Try to switch to state `detached`, `child`, `router`.
+
+```bash
+> state detached
 Done
 ```
 

@@ -208,6 +208,8 @@ void MeshForwarder::EvictMessage(Message &aMessage)
 
     OT_ASSERT(queue != nullptr);
 
+    LogMessage(kMessageEvict, aMessage, kErrorNoBufs);
+
     if (queue == &mSendQueue)
     {
 #if OPENTHREAD_FTD
@@ -218,15 +220,12 @@ void MeshForwarder::EvictMessage(Message &aMessage)
 #endif
 
         FinalizeMessageDirectTx(aMessage, kErrorNoBufs);
-
-        if (mSendMessage == &aMessage)
-        {
-            mSendMessage = nullptr;
-        }
+        RemoveMessageIfNoPendingTx(aMessage);
     }
-
-    LogMessage(kMessageEvict, aMessage, kErrorNoBufs);
-    queue->DequeueAndFree(aMessage);
+    else
+    {
+        queue->DequeueAndFree(aMessage);
+    }
 }
 
 void MeshForwarder::ResumeMessageTransmissions(void)
@@ -1139,7 +1138,7 @@ Neighbor *MeshForwarder::UpdateNeighborOnSentFrame(Mac::TxFrame       &aFrame,
 #endif // OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE
 
 #if OPENTHREAD_CONFIG_MAC_CSL_RECEIVER_ENABLE
-    if ((aFrame.GetHeaderIe(Mac::CslIe::kHeaderIeId) != nullptr) && aIsDataPoll)
+    if (aFrame.HasCslIe() && aIsDataPoll)
     {
         failLimit = kFailedCslDataPollTransmissions;
     }

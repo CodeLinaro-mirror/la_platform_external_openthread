@@ -134,6 +134,67 @@ private:
 
 } OT_TOOL_PACKED_END;
 
+/**
+ * Implements CSL IE data structure.
+ *
+ */
+OT_TOOL_PACKED_BEGIN
+class CslIe
+{
+public:
+    static constexpr uint8_t kHeaderIeId    = 0x1a;
+    static constexpr uint8_t kIeContentSize = sizeof(uint16_t) * 2;
+
+    /**
+     * Returns the CSL Period.
+     *
+     * @returns the CSL Period.
+     *
+     */
+    uint16_t GetPeriod(void) const { return LittleEndian::HostSwap16(mPeriod); }
+
+    /**
+     * Sets the CSL Period.
+     *
+     * @param[in]  aPeriod  The CSL Period.
+     *
+     */
+    void SetPeriod(uint16_t aPeriod) { mPeriod = LittleEndian::HostSwap16(aPeriod); }
+
+    /**
+     * Returns the CSL Phase.
+     *
+     * @returns the CSL Phase.
+     *
+     */
+    uint16_t GetPhase(void) const { return LittleEndian::HostSwap16(mPhase); }
+
+    /**
+     * Sets the CSL Phase.
+     *
+     * @param[in]  aPhase  The CSL Phase.
+     *
+     */
+    void SetPhase(uint16_t aPhase) { mPhase = LittleEndian::HostSwap16(aPhase); }
+
+private:
+    uint16_t mPhase;
+    uint16_t mPeriod;
+} OT_TOOL_PACKED_END;
+
+/**
+ * Implements Termination2 IE.
+ *
+ * Is empty for template specialization.
+ *
+ */
+class Termination2Ie
+{
+public:
+    static constexpr uint8_t kHeaderIeId    = 0x7f;
+    static constexpr uint8_t kIeContentSize = 0;
+};
+
 #if OPENTHREAD_CONFIG_TIME_SYNC_ENABLE || OPENTHREAD_CONFIG_MLE_LINK_METRICS_INITIATOR_ENABLE || \
     OPENTHREAD_CONFIG_MLE_LINK_METRICS_SUBJECT_ENABLE
 /**
@@ -386,6 +447,7 @@ public:
      * @param[in] aPanIds        Source and destination PAN IDs.
      * @param[in] aSecurityLevel Frame security level.
      * @param[in] aKeyIdMode     Frame security key ID mode.
+     * @param[in] aSuppressSequence     Whether to suppress sequence number.
      *
      */
     void InitMacHeader(Type             aType,
@@ -393,7 +455,8 @@ public:
                        const Addresses &aAddrs,
                        const PanIds    &aPanIds,
                        SecurityLevel    aSecurityLevel,
-                       KeyIdMode        aKeyIdMode = kKeyIdMode0);
+                       KeyIdMode        aKeyIdMode        = kKeyIdMode0,
+                       bool             aSuppressSequence = false);
 
     /**
      * Validates the frame.
@@ -512,7 +575,7 @@ public:
      * @returns The Sequence Number value.
      *
      */
-    uint8_t GetSequence(void) const { return GetPsdu()[kSequenceIndex]; }
+    uint8_t GetSequence(void) const;
 
     /**
      * Sets the Sequence Number value.
@@ -520,7 +583,24 @@ public:
      * @param[in]  aSequence  The Sequence Number value.
      *
      */
-    void SetSequence(uint8_t aSequence) { GetPsdu()[kSequenceIndex] = aSequence; }
+    void SetSequence(uint8_t aSequence);
+
+    /**
+     * Indicates whether or not the Sequence Number is present.
+     *
+     * @returns TRUE if the Sequence Number is present, FALSE otherwise.
+     *
+     */
+    uint8_t IsSequencePresent(void) const { return !IsSequenceSuppressed(GetFrameControlField()); }
+
+    /**
+     * Get the size of the sequence number.
+     *
+     * @retval      0       The size of sequence number is 0, indicating it's not present.
+     * @retval      1       The size of sequence number is 1, indicating it's present.
+     *
+     */
+    uint8_t GetSeqNumSize(void) const { return GetSeqNumSize(GetFrameControlField()); }
 
     /**
      * Indicates whether or not the Destination PAN ID is present.
@@ -1004,7 +1084,34 @@ public:
      *
      */
     void SetCslIe(uint16_t aCslPeriod, uint16_t aCslPhase);
+
+    /**
+     * Indicates whether or not the frame contains CSL IE.
+     *
+     * @retval TRUE   If the frame contains CSL IE.
+     * @retval FALSE  If the frame doesn't contain CSL IE.
+     *
+     */
+    bool HasCslIe(void) const;
 #endif // OPENTHREAD_CONFIG_MAC_CSL_RECEIVER_ENABLE
+
+#if OPENTHREAD_CONFIG_MAC_CSL_RECEIVER_ENABLE || (OPENTHREAD_FTD && OPENTHREAD_CONFIG_MAC_CSL_TRANSMITTER_ENABLE)
+    /**
+     * Returns a pointer to a CSL IE.
+     *
+     * @returns A pointer to the CSL IE, `nullptr` if not found.
+     *
+     */
+    const CslIe *GetCslIe(void) const;
+
+    /**
+     * Returns a pointer to a CSL IE.
+     *
+     * @returns A pointer to the CSL IE, `nullptr` if not found.
+     *
+     */
+    CslIe *GetCslIe(void) { return AsNonConst(AsConst(this)->GetCslIe()); }
+#endif // OPENTHREAD_CONFIG_MAC_CSL_RECEIVER_ENABLE || (OPENTHREAD_FTD && OPENTHREAD_CONFIG_MAC_CSL_TRANSMITTER_ENABLE)
 
 #if OPENTHREAD_CONFIG_MLE_LINK_METRICS_SUBJECT_ENABLE
     /**
@@ -1089,21 +1196,22 @@ protected:
     static constexpr uint8_t kCommandIdSize       = sizeof(uint8_t);
     static constexpr uint8_t kKeyIndexSize        = sizeof(uint8_t);
 
-    static constexpr uint16_t kFcfFrameTypeMask    = 7 << 0;
-    static constexpr uint16_t kFcfSecurityEnabled  = 1 << 3;
-    static constexpr uint16_t kFcfFramePending     = 1 << 4;
-    static constexpr uint16_t kFcfAckRequest       = 1 << 5;
-    static constexpr uint16_t kFcfPanidCompression = 1 << 6;
-    static constexpr uint16_t kFcfIePresent        = 1 << 9;
-    static constexpr uint16_t kFcfDstAddrNone      = 0 << 10;
-    static constexpr uint16_t kFcfDstAddrShort     = 2 << 10;
-    static constexpr uint16_t kFcfDstAddrExt       = 3 << 10;
-    static constexpr uint16_t kFcfDstAddrMask      = 3 << 10;
-    static constexpr uint16_t kFcfFrameVersionMask = 3 << 12;
-    static constexpr uint16_t kFcfSrcAddrNone      = 0 << 14;
-    static constexpr uint16_t kFcfSrcAddrShort     = 2 << 14;
-    static constexpr uint16_t kFcfSrcAddrExt       = 3 << 14;
-    static constexpr uint16_t kFcfSrcAddrMask      = 3 << 14;
+    static constexpr uint16_t kFcfFrameTypeMask      = 7 << 0;
+    static constexpr uint16_t kFcfSecurityEnabled    = 1 << 3;
+    static constexpr uint16_t kFcfFramePending       = 1 << 4;
+    static constexpr uint16_t kFcfAckRequest         = 1 << 5;
+    static constexpr uint16_t kFcfPanidCompression   = 1 << 6;
+    static constexpr uint16_t kFcfSequenceSupression = 1 << 8;
+    static constexpr uint16_t kFcfIePresent          = 1 << 9;
+    static constexpr uint16_t kFcfDstAddrNone        = 0 << 10;
+    static constexpr uint16_t kFcfDstAddrShort       = 2 << 10;
+    static constexpr uint16_t kFcfDstAddrExt         = 3 << 10;
+    static constexpr uint16_t kFcfDstAddrMask        = 3 << 10;
+    static constexpr uint16_t kFcfFrameVersionMask   = 3 << 12;
+    static constexpr uint16_t kFcfSrcAddrNone        = 0 << 14;
+    static constexpr uint16_t kFcfSrcAddrShort       = 2 << 14;
+    static constexpr uint16_t kFcfSrcAddrExt         = 3 << 14;
+    static constexpr uint16_t kFcfSrcAddrMask        = 3 << 14;
 
     static constexpr uint8_t kSecLevelMask  = 7 << 0;
     static constexpr uint8_t kKeyIdModeMask = 3 << 3;
@@ -1144,6 +1252,12 @@ protected:
 
     static bool IsDstAddrPresent(uint16_t aFcf) { return (aFcf & kFcfDstAddrMask) != kFcfDstAddrNone; }
     static bool IsDstPanIdPresent(uint16_t aFcf);
+    static bool IsSequenceSuppressed(uint16_t aFcf)
+    {
+        return (aFcf & (kFcfSequenceSupression | kFcfFrameVersionMask)) == (kFcfSequenceSupression | kVersion2015);
+    }
+    static uint8_t GetSeqNumSize(uint16_t aFcf) { return !IsSequenceSuppressed(aFcf) ? kDsnSize : 0; }
+
     static bool IsSrcAddrPresent(uint16_t aFcf) { return (aFcf & kFcfSrcAddrMask) != kFcfSrcAddrNone; }
     static bool IsSrcPanIdPresent(uint16_t aFcf);
     static bool IsVersion2015(uint16_t aFcf) { return (aFcf & kFcfFrameVersionMask) == kVersion2015; }
@@ -1275,6 +1389,14 @@ public:
         mChannel = aChannel;
         SetRxChannelAfterTxDone(aChannel);
     }
+
+    /**
+     * Sets TX power to send the frame.
+     *
+     * @param[in]  aTxPower  The tx power used for transmission.
+     *
+     */
+    void SetTxPower(int8_t aTxPower) { mInfo.mTxInfo.mTxPower = aTxPower; }
 
     /**
      * Gets the RX channel after frame TX is done.
@@ -1731,67 +1853,6 @@ private:
     char            mNetworkName[MeshCoP::NetworkName::kMaxSize];
     otExtendedPanId mExtendedPanId;
 } OT_TOOL_PACKED_END;
-
-/**
- * Implements CSL IE data structure.
- *
- */
-OT_TOOL_PACKED_BEGIN
-class CslIe
-{
-public:
-    static constexpr uint8_t kHeaderIeId    = 0x1a;
-    static constexpr uint8_t kIeContentSize = sizeof(uint16_t) * 2;
-
-    /**
-     * Returns the CSL Period.
-     *
-     * @returns the CSL Period.
-     *
-     */
-    uint16_t GetPeriod(void) const { return LittleEndian::HostSwap16(mPeriod); }
-
-    /**
-     * Sets the CSL Period.
-     *
-     * @param[in]  aPeriod  The CSL Period.
-     *
-     */
-    void SetPeriod(uint16_t aPeriod) { mPeriod = LittleEndian::HostSwap16(aPeriod); }
-
-    /**
-     * Returns the CSL Phase.
-     *
-     * @returns the CSL Phase.
-     *
-     */
-    uint16_t GetPhase(void) const { return LittleEndian::HostSwap16(mPhase); }
-
-    /**
-     * Sets the CSL Phase.
-     *
-     * @param[in]  aPhase  The CSL Phase.
-     *
-     */
-    void SetPhase(uint16_t aPhase) { mPhase = LittleEndian::HostSwap16(aPhase); }
-
-private:
-    uint16_t mPhase;
-    uint16_t mPeriod;
-} OT_TOOL_PACKED_END;
-
-/**
- * Implements Termination2 IE.
- *
- * Is empty for template specialization.
- *
- */
-class Termination2Ie
-{
-public:
-    static constexpr uint8_t kHeaderIeId    = 0x7f;
-    static constexpr uint8_t kIeContentSize = 0;
-};
 
 /**
  * @}
