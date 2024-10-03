@@ -229,11 +229,6 @@ void platformSetUp(otPlatformConfig *aPlatformConfig)
 #endif
 
 #if OPENTHREAD_POSIX_CONFIG_INFRA_IF_ENABLE
-    if (aPlatformConfig->mBackboneInterfaceName != nullptr && strlen(aPlatformConfig->mBackboneInterfaceName) > 0)
-    {
-        otSysSetInfraNetif(aPlatformConfig->mBackboneInterfaceName,
-                           ot::Posix::InfraNetif::CreateIcmp6Socket(aPlatformConfig->mBackboneInterfaceName));
-    }
     ot::Posix::InfraNetif::Get().SetUp();
 #endif
 
