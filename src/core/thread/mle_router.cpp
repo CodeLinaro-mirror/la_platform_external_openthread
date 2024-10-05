@@ -267,7 +267,7 @@ exit:
     return error;
 }
 
-Error MleRouter::BecomeLeader(void)
+Error MleRouter::BecomeLeader(bool aCheckWeight)
 {
     Error    error = kErrorNone;
     Router  *router;
@@ -282,6 +282,11 @@ Error MleRouter::BecomeLeader(void)
     VerifyOrExit(!IsDisabled(), error = kErrorInvalidState);
     VerifyOrExit(!IsLeader(), error = kErrorNone);
     VerifyOrExit(IsRouterEligible(), error = kErrorNotCapable);
+
+    if (aCheckWeight && IsAttached())
+    {
+        VerifyOrExit(mLeaderWeight > mLeaderData.GetWeighting(), error = kErrorNotCapable);
+    }
 
     mRouterTable.Clear();
 
@@ -1960,6 +1965,30 @@ exit:
 }
 #endif // OPENTHREAD_CONFIG_TMF_PROXY_DUA_ENABLE
 
+bool MleRouter::IsMessageMleSubType(const Message &aMessage)
+{
+    bool isMle = false;
+
+    switch (aMessage.GetSubType())
+    {
+    case Message::kSubTypeMleGeneral:
+    case Message::kSubTypeMleChildIdRequest:
+    case Message::kSubTypeMleChildUpdateRequest:
+    case Message::kSubTypeMleDataResponse:
+        isMle = true;
+        break;
+    default:
+        break;
+    }
+
+    return isMle;
+}
+
+bool MleRouter::IsMessageChildUpdateRequest(const Message &aMessage)
+{
+    return aMessage.GetSubType() == Message::kSubTypeMleChildUpdateRequest;
+}
+
 void MleRouter::HandleChildIdRequest(RxInfo &aRxInfo)
 {
     Error              error = kErrorNone;
@@ -1990,10 +2019,7 @@ void MleRouter::HandleChildIdRequest(RxInfo &aRxInfo)
 
     SuccessOrExit(error = aRxInfo.mMessage.ReadAndMatchResponseTlvWith(child->GetChallenge()));
 
-    Get<MeshForwarder>().RemoveMessages(*child, Message::kSubTypeMleGeneral);
-    Get<MeshForwarder>().RemoveMessages(*child, Message::kSubTypeMleChildIdRequest);
-    Get<MeshForwarder>().RemoveMessages(*child, Message::kSubTypeMleChildUpdateRequest);
-    Get<MeshForwarder>().RemoveMessages(*child, Message::kSubTypeMleDataResponse);
+    Get<MeshForwarder>().RemoveMessagesForChild(*child, IsMessageMleSubType);
 
     SuccessOrExit(error = aRxInfo.mMessage.ReadFrameCounterTlvs(linkFrameCounter, mleFrameCounter));
 
@@ -2185,6 +2211,7 @@ void MleRouter::HandleChildUpdateRequest(RxInfo &aRxInfo)
     child->SetDeviceMode(mode);
 
     tlvList.Add(Tlv::kMode);
+    tlvList.Add(Tlv::kLinkMargin);
 
     // Parent MUST include Leader Data TLV in Child Update Response
     tlvList.Add(Tlv::kLeaderData);
@@ -2883,7 +2910,7 @@ Error MleRouter::SendChildUpdateRequest(Child &aChild)
 
                 // Remove queued outdated "Child Update Request" when
                 // there is newer Network Data is to send.
-                Get<MeshForwarder>().RemoveMessages(aChild, Message::kSubTypeMleChildUpdateRequest);
+                Get<MeshForwarder>().RemoveMessagesForChild(aChild, IsMessageChildUpdateRequest);
                 break;
             }
         }
@@ -2895,7 +2922,11 @@ Error MleRouter::SendChildUpdateRequest(Child &aChild)
     SuccessOrExit(error = message->AppendNetworkDataTlv(aChild.GetNetworkDataType()));
     SuccessOrExit(error = message->AppendActiveAndPendingTimestampTlvs());
 
-    if (!aChild.IsStateValid())
+    if (aChild.IsStateValid())
+    {
+        SuccessOrExit(error = message->AppendLinkMarginTlv(aChild.GetLinkInfo().GetLinkMargin()));
+    }
+    else
     {
         SuccessOrExit(error = message->AppendTlvRequestTlv(kTlvs));
 
@@ -3001,6 +3032,10 @@ void MleRouter::SendChildUpdateResponse(Child                  *aChild,
 
         case Tlv::kTimeout:
             SuccessOrExit(error = message->AppendTimeoutTlv(aChild->GetTimeout()));
+            break;
+
+        case Tlv::kLinkMargin:
+            SuccessOrExit(error = message->AppendLinkMarginTlv(aChild->GetLinkInfo().GetLinkMargin()));
             break;
 
         case Tlv::kSupervisionInterval:

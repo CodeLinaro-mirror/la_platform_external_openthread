@@ -181,6 +181,20 @@ public:
                         va_list           aArgs);
 
     /*
+     * Sends a spinel command without arguments to the co-processor.
+     *
+     * @param[in] aCommand    The spinel command.
+     * @param[in] aKey        The spinel property key.
+     * @param[in] aTid        The spinel transaction id.
+     *
+     * @retval  OT_ERROR_NONE           Successfully sent the command through spinel interface.
+     * @retval  OT_ERROR_INVALID_STATE  The spinel interface is in an invalid state.
+     * @retval  OT_ERROR_NO_BUFS        The spinel interface doesn't have enough buffer.
+     *
+     */
+    otError SendCommand(uint32_t aCommand, spinel_prop_key_t aKey, spinel_tid_t aTid);
+
+    /*
      * Sets the handler to process the received spinel frame.
      *
      * @param[in] aReceivedFrameHandler  The handler to process received spinel frames.
@@ -209,6 +223,14 @@ public:
      *
      */
     bool CoprocessorHasCap(unsigned int aCapability) { return mCoprocessorCaps.Contains(aCapability); }
+
+    /**
+     * Returns the spinel interface id.
+     *
+     * @returns the spinel interface id.
+     *
+     */
+    spinel_iid_t GetIid(void) { return mIid; }
 
 private:
     static constexpr uint16_t kMaxSpinelFrame    = SPINEL_FRAME_MAX_SIZE;
@@ -282,8 +304,6 @@ private:
                                    bool          &aSave,
                                    void          *aContext);
     void        HandleInitialFrame(const uint8_t *aFrame, uint16_t aLength, uint8_t aHeader, bool &aSave);
-
-    otError SendCommand(uint32_t aCommand, spinel_prop_key_t aKey, spinel_tid_t aTid);
 
     otError         CheckSpinelVersion(void);
     otError         GetCoprocessorVersion(void);
