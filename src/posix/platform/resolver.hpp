@@ -118,6 +118,8 @@ private:
         int                     mUdpFd;
     };
 
+    static int CreateUdpSocket(void);
+
     Transaction *GetTransaction(int aFd);
     Transaction *GetTransaction(otPlatDnsUpstreamQuery *aThreadTxn);
     Transaction *AllocateTransaction(otPlatDnsUpstreamQuery *aThreadTxn);
