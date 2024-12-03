@@ -376,7 +376,6 @@ filegroup {
         "examples/platforms/simulation/entropy.c",
         "examples/platforms/simulation/flash.c",
         "examples/platforms/simulation/infra_if.c",
-        "examples/platforms/simulation/logging.c",
         "examples/platforms/simulation/misc.c",
         "examples/platforms/simulation/radio.c",
         "examples/platforms/simulation/simul_utils.c",
@@ -388,6 +387,7 @@ filegroup {
         "examples/platforms/utils/mac_frame.cpp",
         "examples/platforms/utils/settings_ram.c",
         "examples/platforms/utils/soft_source_match_table.c",
+        "src/android/logging.c",
     ],
 }
 
@@ -445,6 +445,7 @@ filegroup {
 filegroup {
     name: "openthread_platform_posix_srcs",
     srcs: [
+        "src/android/logging.c",
         "src/posix/platform/alarm.cpp",
         "src/posix/platform/backtrace.cpp",
         "src/posix/platform/configuration.cpp",
@@ -454,7 +455,6 @@ filegroup {
         "src/posix/platform/firewall.cpp",
         "src/posix/platform/hdlc_interface.cpp",
         "src/posix/platform/infra_if.cpp",
-        "src/posix/platform/logging.cpp",
         "src/posix/platform/mainloop.cpp",
         "src/posix/platform/memory.cpp",
         "src/posix/platform/misc.cpp",
@@ -688,6 +688,10 @@ cc_library_static {
         "ot_simulation_cflags_defaults",
     ],
 
+    static_libs: [
+        "libutils",
+    ],
+
     srcs: [
         ":openthread_simulation_srcs",
         "src/lib/platform/exit_code.c",
@@ -906,6 +910,10 @@ cc_binary {
         "examples/apps/ncp/ncp.c",
     ],
 
+    shared_libs: [
+        "liblog", // Required by src/android/logging.c
+    ],
+
     static_libs: [
         "libbase",
         "libcutils",
@@ -1003,5 +1011,6 @@ cc_binary {
 
     shared_libs: [
         "libcutils", // Required by src/core/instance_api.cpp
+        "liblog", // Required by src/android/logging.c
     ],
 }

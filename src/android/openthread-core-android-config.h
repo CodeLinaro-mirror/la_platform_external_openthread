@@ -360,4 +360,7 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 // Enable Link Metrics initiator feature for Thread certification test.
 #define OPENTHREAD_CONFIG_MLE_LINK_METRICS_INITIATOR_ENABLE 1
 
+// Sets microseconds ahead should MAC deliver CSL frame to SubMac.
+#define OPENTHREAD_CONFIG_MAC_CSL_REQUEST_AHEAD_US 4000
+
 #endif // OPENTHREAD_CORE_ANDROID_CONFIG_H_
