@@ -670,6 +670,7 @@ void BorderAgent::HandleConnected(SecureTransport::ConnectEvent aEvent)
         if (mUsingEphemeralKey)
         {
             mCounters.mEpskcSecureSessionSuccesses++;
+            mEphemeralKeyTask.Post();
         }
         else
 #endif
