@@ -108,3 +108,9 @@
 
 // Enable for Android platform.
 #define OPENTHREAD_POSIX_CONFIG_ANDROID_ENABLE 1
+
+// Bind the upstream DNS socket to infra network interface.
+#define OPENTHREAD_POSIX_CONFIG_UPSTREAM_DNS_BIND_TO_INFRA_NETIF 1
+
+// Enable TREL to select infra interface
+#define OPENTHREAD_POSIX_CONFIG_TREL_SELECT_INFRA_IF 1

@@ -291,6 +291,7 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 #define OPENTHREAD_CONFIG_PING_SENDER_ENABLE 1
 #define OPENTHREAD_CONFIG_SRP_SERVER_ENABLE 1
 #define OPENTHREAD_CONFIG_TMF_NETDATA_SERVICE_ENABLE 1
+#define OPENTHREAD_CONFIG_DNS_UPSTREAM_QUERY_ENABLE 1
 
 // Disables built-in TCP support as TCP can be support on upper layer
 #define OPENTHREAD_CONFIG_TCP_ENABLE 0
@@ -350,8 +351,8 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 // Enable the external heap.
 #define OPENTHREAD_CONFIG_HEAP_EXTERNAL_ENABLE 1
 
-// Disable TREL as it's not yet supported.
-#define OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE 0
+// Enable TREL.
+#define OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE 1
 
 // Enable Link Metrics subject feature for Thread certification test.
 #define OPENTHREAD_CONFIG_MLE_LINK_METRICS_SUBJECT_ENABLE 1
