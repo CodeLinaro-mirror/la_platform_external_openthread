@@ -505,7 +505,6 @@ cc_library_static {
     ],
 
     cppflags: [
-        "-pedantic-errors",
         "-Wno-non-virtual-dtor",
         // Background: the HAL client implementation requires features which
         // are available on only 31+, but the Tethering module requires the
@@ -574,7 +573,6 @@ cc_library_static {
 
     cppflags: [
         "-std=c++11",
-        "-pedantic-errors",
         "-Wno-c99-extensions",
     ],
 
@@ -605,10 +603,6 @@ cc_binary {
     name: "ot-ctl",
     defaults: ["ot_posix_cflags_defaults"],
     generated_headers: ["ot_version_header"],
-
-    cppflags: [
-        "-pedantic-errors",
-    ],
 
     local_include_dirs: [
         "include",
