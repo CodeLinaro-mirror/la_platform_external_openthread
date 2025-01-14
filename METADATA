@@ -1,18 +1,16 @@
 name: "openthread"
-description:
-    "OpenThread is an open-source implementation of the Thread networking "
-    "protocol."
-
+description: "OpenThread is an open-source implementation of the Thread networking protocol."
 third_party {
-  url {
-    type: HOMEPAGE
-    value: "https://github.com/openthread/openthread"
-  }
-  url {
-    type: GIT
-    value: "https://github.com/openthread/openthread.git"
-  }
-  version: "1882fad68add5edc98a5235360b5f8a48e303c65"
-  last_upgrade_date { year: 2022 month: 11 day: 15 }
   license_type: NOTICE
+  last_upgrade_date {
+    year: 2024
+    month: 9
+    day: 5
+  }
+  homepage: "https://github.com/openthread/openthread"
+  identifier {
+    type: "Git"
+    value: "https://github.com/openthread/openthread.git"
+    version: "e63e9ce86b4f22f95155e1e2e9da1d300389e7c6"
+  }
 }
