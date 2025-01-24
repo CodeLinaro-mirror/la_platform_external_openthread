@@ -26,8 +26,8 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  */
 
-// Enable aborting the host when receiving unexpected reset from RCP.
-#define OPENTHREAD_SPINEL_CONFIG_ABORT_ON_UNEXPECTED_RCP_RESET_ENABLE 1
+// Disable aborting the host when receiving unexpected reset from RCP.
+#define OPENTHREAD_SPINEL_CONFIG_ABORT_ON_UNEXPECTED_RCP_RESET_ENABLE 0
 
 // Set the interval (in units of microseconds) for host-rcp time sync to 10 seconds.
 #define OPENTHREAD_SPINEL_CONFIG_RCP_TIME_SYNC_INTERVAL (10 * 1000 * 1000)
