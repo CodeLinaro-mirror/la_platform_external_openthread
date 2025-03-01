@@ -35,11 +35,6 @@
 
 #if OPENTHREAD_CONFIG_MESH_DIAG_ENABLE && OPENTHREAD_FTD
 
-#include "common/as_core_type.hpp"
-#include "common/code_utils.hpp"
-#include "common/debug.hpp"
-#include "common/locator_getters.hpp"
-#include "common/log.hpp"
 #include "instance/instance.hpp"
 
 namespace ot {
@@ -115,7 +110,7 @@ exit:
 void MeshDiag::HandleDiagGetResponse(void                *aContext,
                                      otMessage           *aMessage,
                                      const otMessageInfo *aMessageInfo,
-                                     Error                aResult)
+                                     otError              aResult)
 {
     static_cast<MeshDiag *>(aContext)->HandleDiagGetResponse(AsCoapMessagePtr(aMessage), AsCoreTypePtr(aMessageInfo),
                                                              aResult);
@@ -239,27 +234,27 @@ exit:
 
 bool MeshDiag::HandleDiagnosticGetAnswer(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo)
 {
-    bool didPorcess = false;
+    bool didProcess = false;
 
     switch (mState)
     {
     case kStateQueryChildTable:
-        didPorcess = ProcessChildTableAnswer(aMessage, aMessageInfo);
+        didProcess = ProcessChildTableAnswer(aMessage, aMessageInfo);
         break;
 
     case kStateQueryChildrenIp6Addrs:
-        didPorcess = ProcessChildrenIp6AddrsAnswer(aMessage, aMessageInfo);
+        didProcess = ProcessChildrenIp6AddrsAnswer(aMessage, aMessageInfo);
         break;
 
     case kStateQueryRouterNeighborTable:
-        didPorcess = ProcessRouterNeighborTableAnswer(aMessage, aMessageInfo);
+        didProcess = ProcessRouterNeighborTableAnswer(aMessage, aMessageInfo);
         break;
 
     default:
         break;
     }
 
-    return didPorcess;
+    return didProcess;
 }
 
 Error MeshDiag::ProcessMessage(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo, uint16_t aSenderRloc16)
@@ -295,7 +290,7 @@ exit:
 
 bool MeshDiag::ProcessChildTableAnswer(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo)
 {
-    bool       didPorcess = false;
+    bool       didProcess = false;
     ChildTlv   childTlv;
     ChildEntry entry;
     uint16_t   offset;
@@ -307,7 +302,7 @@ bool MeshDiag::ProcessChildTableAnswer(Coap::Message &aMessage, const Ip6::Messa
         SuccessOrExit(Tlv::FindTlv(aMessage, childTlv, offset));
         VerifyOrExit(!childTlv.IsExtended());
 
-        didPorcess = true;
+        didProcess = true;
 
         if (childTlv.GetLength() == 0)
         {
@@ -332,12 +327,12 @@ bool MeshDiag::ProcessChildTableAnswer(Coap::Message &aMessage, const Ip6::Messa
     }
 
 exit:
-    return didPorcess;
+    return didProcess;
 }
 
 bool MeshDiag::ProcessRouterNeighborTableAnswer(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo)
 {
-    bool                didPorcess = false;
+    bool                didProcess = false;
     RouterNeighborTlv   neighborTlv;
     RouterNeighborEntry entry;
     uint16_t            offset;
@@ -349,7 +344,7 @@ bool MeshDiag::ProcessRouterNeighborTableAnswer(Coap::Message &aMessage, const I
         SuccessOrExit(Tlv::FindTlv(aMessage, neighborTlv, offset));
         VerifyOrExit(!neighborTlv.IsExtended());
 
-        didPorcess = true;
+        didProcess = true;
 
         if (neighborTlv.GetLength() == 0)
         {
@@ -373,12 +368,12 @@ bool MeshDiag::ProcessRouterNeighborTableAnswer(Coap::Message &aMessage, const I
     }
 
 exit:
-    return didPorcess;
+    return didProcess;
 }
 
 bool MeshDiag::ProcessChildrenIp6AddrsAnswer(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo)
 {
-    bool                        didPorcess = false;
+    bool                        didProcess = false;
     OffsetRange                 offsetRange;
     ChildIp6AddressListTlvValue tlvValue;
     Ip6AddrIterator             ip6AddrIterator;
@@ -389,7 +384,7 @@ bool MeshDiag::ProcessChildrenIp6AddrsAnswer(Coap::Message &aMessage, const Ip6:
     {
         SuccessOrExit(Tlv::FindTlvValueOffsetRange(aMessage, ChildIp6AddressListTlv::kType, offsetRange));
 
-        didPorcess = true;
+        didProcess = true;
 
         if (offsetRange.IsEmpty())
         {
@@ -419,7 +414,7 @@ bool MeshDiag::ProcessChildrenIp6AddrsAnswer(Coap::Message &aMessage, const Ip6:
     }
 
 exit:
-    return didPorcess;
+    return didProcess;
 }
 
 void MeshDiag::Cancel(void)

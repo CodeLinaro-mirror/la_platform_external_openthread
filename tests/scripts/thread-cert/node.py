@@ -425,8 +425,8 @@ class OtbrDocker:
     def activate_ephemeral_key_mode(self, lifetime):
         return self.call_dbus_method('io.openthread.BorderRouter', 'ActivateEphemeralKeyMode', lifetime)
 
-    def deactivate_ephemeral_key_mode(self):
-        return self.call_dbus_method('io.openthread.BorderRouter', 'DeactivateEphemeralKeyMode')
+    def deactivate_ephemeral_key_mode(self, retain_active_session):
+        return self.call_dbus_method('io.openthread.BorderRouter', 'DeactivateEphemeralKeyMode', retain_active_session)
 
     @property
     def nat64_cidr(self):
@@ -625,8 +625,8 @@ class OtCli:
             if self.version != '1.1' and self.is_bbr:
                 if 'OT_CLI_PATH_BBR' in os.environ:
                     cmd = os.environ['OT_CLI_PATH_BBR']
-                elif 'top_builddir_1_3_bbr' in os.environ:
-                    srcdir = os.environ['top_builddir_1_3_bbr']
+                elif 'top_builddir_1_4_bbr' in os.environ:
+                    srcdir = os.environ['top_builddir_1_4_bbr']
                     cmd = '%s/examples/apps/cli/ot-cli-%s' % (srcdir, mode)
 
             # Load Thread device of the testing environment version (may be 1.1 or 1.2)
@@ -692,13 +692,13 @@ class OtCli:
             # Load Thread 1.2 BBR device when testing Thread 1.2 scenarios
             # which requires device with Backbone functionality.
             if self.version != '1.1' and self.is_bbr:
-                if 'OT_NCP_PATH_1_3_BBR' in os.environ:
+                if 'OT_NCP_PATH_1_4_BBR' in os.environ:
                     cmd = 'spinel-cli.py -p "%s%s" -n' % (
-                        os.environ['OT_NCP_PATH_1_3_BBR'],
+                        os.environ['OT_NCP_PATH_1_4_BBR'],
                         args,
                     )
-                elif 'top_builddir_1_3_bbr' in os.environ:
-                    srcdir = os.environ['top_builddir_1_3_bbr']
+                elif 'top_builddir_1_4_bbr' in os.environ:
+                    srcdir = os.environ['top_builddir_1_4_bbr']
                     cmd = '%s/examples/apps/ncp/ot-ncp-%s' % (srcdir, mode)
                     cmd = 'spinel-cli.py -p "%s%s" -n' % (
                         cmd,
@@ -936,7 +936,7 @@ class NodeImpl:
         cmd = cmd.strip()
         while True:
             line = self.__readline()
-            if line == cmd:
+            if line.strip() == cmd:
                 break
 
             logging.warning("expecting echo %r, but read %r", cmd, line)
@@ -1456,16 +1456,6 @@ class NodeImpl:
         self.send_command(cmd)
         return int(self._expect_command_output()[0])
 
-    def set_epskc(self, keystring: str, timeout=120000, port=0):
-        cmd = 'ba ephemeralkey set ' + keystring + ' ' + str(timeout) + ' ' + str(port)
-        self.send_command(cmd)
-        self._expect(r"(Done|Error .*)")
-
-    def clear_epskc(self):
-        cmd = 'ba ephemeralkey clear'
-        self.send_command(cmd)
-        self._expect_done()
-
     def get_border_agent_counters(self):
         cmd = 'ba counters'
         self.send_command(cmd)
@@ -1934,7 +1924,7 @@ class NodeImpl:
 
     def get_ephemeral_key_state(self):
         cmd = 'ba ephemeralkey'
-        states = [r'inactive', r'active']
+        states = [r'Disabled', r'Stopped', r'Started', r'Connected', r'Accepted']
         self.send_command(cmd)
         return self._expect_result(states)
 
@@ -2286,8 +2276,8 @@ class NodeImpl:
 
     def get_br_routers(self) -> List[str]:
         # Example output of `br routers` command:
-        #   fe80:0:0:0:42:acff:fe14:3 (M:0 O:0 Stub:1) ms-since-rx:144160 reachable:yes age:00:17:36 (peer BR)
-        #   fe80:0:0:0:42:acff:fe14:2 (M:0 O:0 Stub:1) ms-since-rx:45179 reachable:yes age:00:17:36
+        #   fe80:0:0:0:42:acff:fe14:3 (M:0 O:0 S:1) ms-since-rx:144160 reachable:yes age:00:17:36 (peer BR)
+        #   fe80:0:0:0:42:acff:fe14:2 (M:0 O:0 S:1) ms-since-rx:45179 reachable:yes age:00:17:36
         #   Done
         self.send_command('br routers')
         return self._expect_command_output()
@@ -2309,6 +2299,20 @@ class NodeImpl:
         cmd = 'br onlinkprefix local'
         self.send_command(cmd)
         return self._expect_command_output()[0]
+
+    def pd_get_prefix(self):
+        cmd = 'br pd omrprefix'
+        self.send_command(cmd)
+        return self._expect_command_output()[0].split(" ")[0]
+
+    def pd_set_enabled(self, enable):
+        self.send_command('br pd {}'.format("enable" if enable else "disable"))
+        self._expect_done()
+
+    @property
+    def pd_state(self):
+        self.send_command('br pd state')
+        return self._expect_command_output()[0].strip()
 
     def get_netdata_non_nat64_routes(self):
         nat64_routes = []
@@ -2501,16 +2505,16 @@ class NodeImpl:
         self.send_command('netdata register')
         self._expect_done()
 
-    def netdata_publish_dnssrp_anycast(self, seqnum):
-        self.send_command(f'netdata publish dnssrp anycast {seqnum}')
+    def netdata_publish_dnssrp_anycast(self, seqnum, version=0):
+        self.send_command(f'netdata publish dnssrp anycast {seqnum} {version}')
         self._expect_done()
 
-    def netdata_publish_dnssrp_unicast(self, address, port):
-        self.send_command(f'netdata publish dnssrp unicast {address} {port}')
+    def netdata_publish_dnssrp_unicast(self, address, port, version=0):
+        self.send_command(f'netdata publish dnssrp unicast {address} {port} {version}')
         self._expect_done()
 
-    def netdata_publish_dnssrp_unicast_mleid(self, port):
-        self.send_command(f'netdata publish dnssrp unicast {port}')
+    def netdata_publish_dnssrp_unicast_mleid(self, port, version=0):
+        self.send_command(f'netdata publish dnssrp unicast {port} {version}')
         self._expect_done()
 
     def netdata_unpublish_dnssrp(self):
@@ -4036,6 +4040,8 @@ class LinuxHost():
         for line in self.bash(f'cat {host_name_file}', encoding='raw_unicode_escape'):
             elements = line.split()
             fullname = f'{host_name}.local.'
+            if 'No Such Record' in line:
+                continue
             if fullname not in elements:
                 continue
             if 'Add' not in elements:
@@ -4102,6 +4108,33 @@ interface eth0
 };
 EOF
 """ % (prefix, 'on' if slaac else 'off'))
+        self.bash('service radvd start')
+        self.bash('service radvd status')  # Make sure radvd service is running
+
+    def start_pd_radvd_service(self, prefix):
+        self.bash("""cat >/etc/radvd.conf <<EOF
+interface wpan0
+{
+    AdvSendAdvert on;
+
+    AdvReachableTime 20;
+    AdvRetransTimer 20;
+    AdvDefaultLifetime 180;
+    MinRtrAdvInterval 120;
+    MaxRtrAdvInterval 180;
+    AdvDefaultPreference low;
+
+    prefix %s
+    {
+        AdvOnLink on;
+        AdvAutonomous on;
+        AdvRouterAddr off;
+        AdvPreferredLifetime 180;
+        AdvValidLifetime 180;
+    };
+};
+EOF
+""" % (prefix,))
         self.bash('service radvd start')
         self.bash('service radvd status')  # Make sure radvd service is running
 
