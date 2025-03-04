@@ -54,17 +54,18 @@ const uint32_t kThreadEnterpriseNumber = ServiceTlv::kThreadEnterpriseNumber; //
 
 /**
  * Represents information about an DNS/SRP server parsed from related Network Data service entries.
+ *
  */
 struct DnsSrpAnycastInfo
 {
     Ip6::Address mAnycastAddress; ///< The anycast address associated with the DNS/SRP servers.
     uint8_t      mSequenceNumber; ///< Sequence number used to notify SRP client if they need to re-register.
-    uint8_t      mVersion;        ///< Version number.
     uint16_t     mRloc16;         ///< The RLOC16 of the entry.
 };
 
 /**
  * Represents the `DnsSrpUnicast` entry type.
+ *
  */
 enum DnsSrpUnicastType : uint8_t
 {
@@ -74,22 +75,24 @@ enum DnsSrpUnicastType : uint8_t
 
 /**
  * Represents information about an DNS/SRP server parsed from related Network Data service entries.
+ *
  */
 struct DnsSrpUnicastInfo
 {
     Ip6::SockAddr mSockAddr; ///< The socket address (IPv6 address and port) of the DNS/SRP server.
-    uint8_t       mVersion;  ///< Version number.
     uint16_t      mRloc16;   ///< The BR RLOC16 adding the entry.
 };
 
 /**
  * Manages the Thread Service entries in Thread Network Data.
+ *
  */
 class Manager : public InstanceLocator, private NonCopyable
 {
 public:
     /**
      * Represents an iterator used to iterate through Network Data Service entries.
+     *
      */
     class Iterator : public Clearable<Iterator>
     {
@@ -98,6 +101,7 @@ public:
     public:
         /**
          * Initializes the iterator (as empty/clear).
+         *
          */
         Iterator(void)
             : mServiceTlv(nullptr)
@@ -107,6 +111,7 @@ public:
 
         /**
          * Resets the iterator to start from beginning.
+         *
          */
         void Reset(void)
         {
@@ -123,6 +128,7 @@ public:
      * Initializes the `Manager` object.
      *
      * @param[in]  aInstance     A reference to the OpenThread instance.
+     *
      */
     explicit Manager(Instance &aInstance)
         : InstanceLocator(aInstance)
@@ -134,12 +140,15 @@ public:
      * Adds a DNS/SRP Anycast Service entry to the local Thread Network Data.
      *
      * @param[in] aSequenceNumber  The anycast sequence number.
-     * @param[in] aVersion         The version number
      *
      * @retval kErrorNone     Successfully added the Service entry.
      * @retval kErrorNoBufs   Insufficient space to add the Service entry.
+     *
      */
-    Error AddDnsSrpAnycastService(uint8_t aSequenceNumber, uint8_t aVersion);
+    Error AddDnsSrpAnycastService(uint8_t aSequenceNumber)
+    {
+        return AddService(DnsSrpAnycastServiceData(aSequenceNumber));
+    }
 
     /**
      * Removes a DNS/SRP Anycast Service entry from local Thread Network Data.
@@ -148,6 +157,7 @@ public:
      *
      * @retval kErrorNone       Successfully removed the Service entry.
      * @retval kErrorNotFound   Could not find the Service entry.
+     *
      */
     Error RemoveDnsSrpAnycastService(uint8_t aSequenceNumber)
     {
@@ -159,14 +169,14 @@ public:
      *
      * @param[in] aAddress    The unicast address.
      * @param[in] aPort       The port number.
-     * @param[in] aVersion    The version.
      *
      * @retval kErrorNone     Successfully added the Service entry.
      * @retval kErrorNoBufs   Insufficient space to add the Service entry.
+     *
      */
-    Error AddDnsSrpUnicastServiceWithAddrInServiceData(const Ip6::Address &aAddress, uint16_t aPort, uint8_t aVersion)
+    Error AddDnsSrpUnicastServiceWithAddrInServiceData(const Ip6::Address &aAddress, uint16_t aPort)
     {
-        return AddService(DnsSrpUnicast::ServiceData(aAddress, aPort, aVersion));
+        return AddService(DnsSrpUnicast::ServiceData(aAddress, aPort));
     }
 
     /**
@@ -174,16 +184,14 @@ public:
      *
      * @param[in] aAddress    The unicast address.
      * @param[in] aPort       The port number.
-     * @param[in] aVersion    The version.
      *
      * @retval kErrorNone       Successfully removed the Service entry.
      * @retval kErrorNotFound   Could not find the Service entry.
+     *
      */
-    Error RemoveDnsSrpUnicastServiceWithAddrInServiceData(const Ip6::Address &aAddress,
-                                                          uint16_t            aPort,
-                                                          uint8_t             aVersion)
+    Error RemoveDnsSrpUnicastServiceWithAddrInServiceData(const Ip6::Address &aAddress, uint16_t aPort)
     {
-        return RemoveService(DnsSrpUnicast::ServiceData(aAddress, aPort, aVersion));
+        return RemoveService(DnsSrpUnicast::ServiceData(aAddress, aPort));
     }
 
     /**
@@ -191,14 +199,14 @@ public:
      *
      * @param[in] aAddress    The unicast address.
      * @param[in] aPort       The port number.
-     * @param[in] aVersion    The version.
      *
      * @retval kErrorNone     Successfully added the Service entry.
      * @retval kErrorNoBufs   Insufficient space to add the Service entry.
+     *
      */
-    Error AddDnsSrpUnicastServiceWithAddrInServerData(const Ip6::Address &aAddress, uint16_t aPort, uint8_t aVersion)
+    Error AddDnsSrpUnicastServiceWithAddrInServerData(const Ip6::Address &aAddress, uint16_t aPort)
     {
-        return AddServiceWithNumber(kDnsSrpUnicastServiceNumber, DnsSrpUnicast::ServerData(aAddress, aPort, aVersion));
+        return AddService(kDnsSrpUnicastServiceNumber, DnsSrpUnicast::ServerData(aAddress, aPort));
     }
 
     /**
@@ -206,6 +214,7 @@ public:
      *
      * @retval kErrorNone       Successfully removed the Service entry.
      * @retval kErrorNotFound   Could not find the Service entry.
+     *
      */
     Error RemoveDnsSrpUnicastServiceWithAddrInServerData(void) { return RemoveService(kDnsSrpUnicastServiceNumber); }
 
@@ -219,11 +228,12 @@ public:
      *
      * @retval kErrorNone     Successfully added the Service entry.
      * @retval kErrorNoBufs   Insufficient space to add the Service entry.
+     *
      */
     Error AddBackboneRouterService(uint8_t aSequenceNumber, uint16_t aReregistrationDelay, uint32_t aMlrTimeout)
     {
-        return AddServiceWithNumber(kBackboneRouterServiceNumber,
-                                    BbrServerData(aSequenceNumber, aReregistrationDelay, aMlrTimeout));
+        return AddService(kBackboneRouterServiceNumber,
+                          BbrServerData(aSequenceNumber, aReregistrationDelay, aMlrTimeout));
     }
 
     /**
@@ -231,6 +241,7 @@ public:
      *
      * @retval kErrorNone       Successfully removed the Service entry.
      * @retval kErrorNotFound   Could not find the Service entry.
+     *
      */
     Error RemoveBackboneRouterService(void) { return RemoveService(kBackboneRouterServiceNumber); }
 #endif
@@ -242,6 +253,7 @@ public:
      * Gets the Primary Backbone Router (PBBR) in the Thread Network Data.
      *
      * @param[out]  aConfig      The Primary Backbone Router configuration.
+     *
      */
     void GetBackboneRouterPrimary(ot::BackboneRouter::Config &aConfig) const;
 
@@ -252,6 +264,7 @@ public:
      *
      * @retval kErrorNone       Successfully got the Service ID.
      * @retval kErrorNotFound   The specified service was not found.
+     *
      */
     Error GetBackboneRouterServiceId(uint8_t &aServiceId) const
     {
@@ -270,6 +283,7 @@ public:
      *
      * @retval kErrorNone       Successfully got the next info. @p aInfo and @p aIterator are updated.
      * @retval kErrorNotFound   No more matching entries in the Network Data.
+     *
      */
     Error GetNextDnsSrpAnycastInfo(Iterator &aIterator, DnsSrpAnycastInfo &aInfo) const;
 
@@ -280,13 +294,11 @@ public:
      * The preferred entry is determined based on the sequence number value where a larger value (in the sense
      * specified by Serial Number Arithmetic logic in RFC-1982) is considered more recent and therefore preferred.
      *
-     * When successfully found, the `aInfo.mVersion` is set to the minimum version among all the entries matching the
-     * same sequence number as the selected `aInfo.mSequenceNumber`.
-     *
      * @param[out] aInfo        A reference to `DnsSrpAnycastInfo` to return the info.
      *
      * @retval kErrorNone       Successfully found the preferred info. @p aInfo is updated.
      * @retval kErrorNotFound   No "DNS/SRP Service Anycast" entry in Network Data.
+     *
      */
     Error FindPreferredDnsSrpAnycastInfo(DnsSrpAnycastInfo &aInfo) const;
 
@@ -302,6 +314,7 @@ public:
      *
      * @retval kErrorNone       Successfully got the next info. @p aInfo and @p aIterator are updated.
      * @retval kErrorNotFound   No more matching entries in the Network Data.
+     *
      */
     Error GetNextDnsSrpUnicastInfo(Iterator &aIterator, DnsSrpUnicastType aType, DnsSrpUnicastInfo &aInfo) const;
 
@@ -322,7 +335,6 @@ private:
         }
 
         uint8_t GetSequenceNumber(void) const { return mSequenceNumber; }
-        uint8_t GetLength(void) const { return sizeof(DnsSrpAnycastServiceData); }
 
     private:
         uint8_t mServiceNumber;
@@ -333,88 +345,43 @@ private:
     {
     public:
         OT_TOOL_PACKED_BEGIN
-        class AddrData
+        struct ServiceData
         {
         public:
-            static constexpr uint8_t kMinLength = sizeof(Ip6::Address) + sizeof(uint16_t); // Address and port.
-
-            AddrData(const Ip6::Address &aAddress, uint16_t aPort, uint8_t aVersion)
-                : mAddress(aAddress)
-                , mPort(BigEndian::HostSwap16(aPort))
-                , mVersion(aVersion)
-            {
-            }
-
-            uint8_t             GetLength(void) const { return (mVersion == 0) ? kMinLength : sizeof(AddrData); }
-            const Ip6::Address &GetAddress(void) const { return mAddress; }
-            uint16_t            GetPort(void) const { return BigEndian::HostSwap16(mPort); }
-            uint8_t             GetVersion(void) const { return mVersion; }
-
-            static Error ParseFrom(const uint8_t *aData, uint8_t aLength, DnsSrpUnicastInfo &aInfo);
-
-        private:
-            Ip6::Address mAddress;
-            uint16_t     mPort;
-            uint8_t      mVersion;
-        } OT_TOOL_PACKED_END;
-
-        static_assert(AddrData::kMinLength + sizeof(uint8_t) == sizeof(AddrData),
-                      "Update all methods/constants if adding new (optional) fields to `AddrData`.");
-
-        OT_TOOL_PACKED_BEGIN
-        class ServiceData
-        {
-        public:
-            static constexpr uint8_t kMinLength = sizeof(uint8_t) + AddrData::kMinLength;
-
-            ServiceData(const Ip6::Address &aAddress, uint16_t aPort, uint8_t aVersion)
+            explicit ServiceData(const Ip6::Address &aAddress, uint16_t aPort)
                 : mServiceNumber(kDnsSrpUnicastServiceNumber)
-                , mAddrData(aAddress, aPort, aVersion)
+                , mAddress(aAddress)
+                , mPort(BigEndian::HostSwap16(aPort))
             {
                 OT_UNUSED_VARIABLE(mServiceNumber);
             }
 
-            uint8_t GetLength(void) const { return sizeof(uint8_t) + mAddrData.GetLength(); }
-
-            static Error ParseFrom(const ServiceTlv &aServiceTlv, DnsSrpUnicastInfo &aInfo)
-            {
-                // Skip over `mServiceNumber` field (`uint8_t`)`
-                return AddrData::ParseFrom(aServiceTlv.GetServiceData() + sizeof(uint8_t),
-                                           aServiceTlv.GetServiceDataLength() - sizeof(uint8_t), aInfo);
-            }
+            const Ip6::Address &GetAddress(void) const { return mAddress; }
+            uint16_t            GetPort(void) const { return BigEndian::HostSwap16(mPort); }
 
         private:
-            uint8_t  mServiceNumber;
-            AddrData mAddrData;
+            uint8_t      mServiceNumber;
+            Ip6::Address mAddress;
+            uint16_t     mPort;
         } OT_TOOL_PACKED_END;
-
-        static_assert(ServiceData::kMinLength + sizeof(uint8_t) == sizeof(ServiceData),
-                      "Update all methods/constants if adding new (optional) fields to `ServiceData`.");
 
         OT_TOOL_PACKED_BEGIN
         class ServerData
         {
         public:
-            static constexpr uint8_t kMinLength = AddrData::kMinLength;
-
-            ServerData(const Ip6::Address &aAddress, uint16_t aPort, uint8_t aVersion)
-                : mAddrData(aAddress, aPort, aVersion)
+            ServerData(const Ip6::Address &aAddress, uint16_t aPort)
+                : mAddress(aAddress)
+                , mPort(BigEndian::HostSwap16(aPort))
             {
             }
 
-            uint8_t GetLength(void) const { return mAddrData.GetLength(); }
-
-            static Error ParseFrom(const ServerTlv &aServerTlv, DnsSrpUnicastInfo &aInfo)
-            {
-                return AddrData::ParseFrom(aServerTlv.GetServerData(), aServerTlv.GetServerDataLength(), aInfo);
-            }
+            const Ip6::Address &GetAddress(void) const { return mAddress; }
+            uint16_t            GetPort(void) const { return BigEndian::HostSwap16(mPort); }
 
         private:
-            AddrData mAddrData;
+            Ip6::Address mAddress;
+            uint16_t     mPort;
         } OT_TOOL_PACKED_END;
-
-        static_assert(ServerData::kMinLength + sizeof(uint8_t) == sizeof(ServerData),
-                      "Update all methods/constants if adding new (optional) fields to `ServerData`.");
 
         DnsSrpUnicast(void) = delete;
     };
@@ -434,7 +401,6 @@ private:
         uint8_t  GetSequenceNumber(void) const { return mSequenceNumber; }
         uint16_t GetReregistrationDelay(void) const { return BigEndian::HostSwap16(mReregDelay); }
         uint32_t GetMlrTimeout(void) const { return BigEndian::HostSwap32(mMlrTimeout); }
-        uint8_t  GetLength(void) const { return sizeof(BbrServerData); }
 
     private:
         uint8_t  mSequenceNumber;
@@ -446,29 +412,22 @@ private:
 #if OPENTHREAD_CONFIG_TMF_NETDATA_SERVICE_ENABLE
     template <typename ServiceDataType> Error AddService(const ServiceDataType &aServiceData)
     {
-        return AddService(&aServiceData, aServiceData.GetLength(), nullptr, 0);
+        return AddService(&aServiceData, sizeof(ServiceDataType), nullptr, 0);
     }
 
-    template <typename ServerDataType>
-    Error AddServiceWithNumber(uint8_t aServiceNumber, const ServerDataType &aServerData)
+    template <typename ServerDataType> Error AddService(uint8_t aServiceNumber, const ServerDataType &aServerData)
     {
-        return AddService(&aServiceNumber, sizeof(uint8_t), &aServerData, aServerData.GetLength());
-    }
-
-    template <typename ServiceDataType, typename ServerDataType>
-    Error AddService(const ServiceDataType &aServiceData, const ServerDataType &aServerData)
-    {
-        return AddService(&aServiceData, aServiceData.GetLength(), &aServerData, sizeof(ServerDataType));
+        return AddService(&aServiceNumber, sizeof(uint8_t), &aServerData, sizeof(ServerDataType));
     }
 
     Error AddService(const void *aServiceData,
                      uint8_t     aServiceDataLength,
-                     const void *aServerData,
-                     uint8_t     aServerDataLength);
+                     const void *aServerData       = nullptr,
+                     uint8_t     aServerDataLength = 0);
 
     template <typename ServiceDataType> Error RemoveService(const ServiceDataType &aServiceData)
     {
-        return RemoveService(&aServiceData, aServiceData.GetLength());
+        return RemoveService(&aServiceData, sizeof(ServiceDataType));
     }
 
     Error RemoveService(uint8_t aServiceNumber) { return RemoveService(&aServiceNumber, sizeof(uint8_t)); }

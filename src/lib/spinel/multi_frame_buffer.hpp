@@ -57,6 +57,7 @@ namespace Spinel {
  *
  * Two template sub-class `FrameBuffer` and `MultiFrameBuffer` are defined which respectively allow storing a single
  * frame or multiple frames (FIFO queue of frame) in a buffer of a given size.
+ *
  */
 class FrameWritePointer
 {
@@ -68,6 +69,7 @@ public:
      *
      * @retval TRUE                 Enough buffer space is available to write the requested number of bytes.
      * @retval FALSE                Insufficient buffer space to write the requested number of bytes.
+     *
      */
     bool CanWrite(uint16_t aWriteLength) const { return (mRemainingLength >= aWriteLength); }
 
@@ -78,6 +80,7 @@ public:
      *
      * @retval OT_ERROR_NONE     Successfully wrote the byte and updated the pointer.
      * @retval OT_ERROR_NO_BUFS  Insufficient buffer space to write the byte.
+     *
      */
     otError WriteByte(uint8_t aByte)
     {
@@ -93,6 +96,7 @@ public:
      * larger than the number of bytes previously written into the frame.
      *
      * @param[in]  aUndoLength   Number of bytes to remove (number of last `WriteByte()` calls to undo).
+     *
      */
     void UndoLastWrites(uint16_t aUndoLength)
     {
@@ -115,12 +119,14 @@ protected:
  * Defines a template frame buffer of a given size for storing a single frame.
  *
  * @tparam kSize  The size of the frame buffer.
+ *
  */
 template <uint16_t kSize> class FrameBuffer : public FrameWritePointer
 {
 public:
     /**
      * Initializes the `FrameBuffer` object.
+     *
      */
     FrameBuffer(void)
         : FrameWritePointer()
@@ -130,6 +136,7 @@ public:
 
     /**
      * Clears the buffer, moving the write pointer to the beginning of the buffer.
+     *
      */
     void Clear(void)
     {
@@ -142,6 +149,7 @@ public:
      *
      * @retval TRUE  Buffer is empty.
      * @retval FALSE Buffer contains a frame.
+     *
      */
     bool IsEmpty(void) const { return (mWritePointer == mBuffer); }
 
@@ -149,6 +157,7 @@ public:
      * Gets the length (number of bytes) in the frame.
      *
      * @returns The length (number of bytes) in the frame.
+     *
      */
     uint16_t GetLength(void) const { return static_cast<uint16_t>(mWritePointer - mBuffer); }
 
@@ -156,6 +165,7 @@ public:
      * Gets a pointer to start of the frame.
      *
      * @returns A pointer to start of the frame.
+     *
      */
     uint8_t *GetFrame(void) { return mBuffer; }
 
@@ -170,12 +180,14 @@ private:
  * in a FIFO queue format.
  *
  * @tparam kSize  The total size of the buffer.
+ *
  */
 template <uint16_t kSize> class MultiFrameBuffer : public FrameWritePointer
 {
 public:
     /**
      * Initializes the `MultiFrameBuffer` object.
+     *
      */
     MultiFrameBuffer(void)
         : FrameWritePointer()
@@ -187,6 +199,7 @@ public:
      * Clears the buffer, removing current frame and all previously saved frames.
      *
      * It moves the write pointer to the beginning of the buffer.
+     *
      */
     void Clear(void)
     {
@@ -202,6 +215,7 @@ public:
      *
      * @retval TRUE  Current frame is empty.
      * @retval FALSE Current frame is not empty.
+     *
      */
     bool HasFrame(void) const { return (mWritePointer != GetFrame()); }
 
@@ -212,6 +226,7 @@ public:
      *
      * @retval OT_ERROR_NONE     Successfully set the length of the current frame.
      * @retval OT_ERROR_NO_BUFS  Insufficient buffer space to hold a frame of length @p aLength.
+     *
      */
     otError SetLength(uint16_t aLength)
     {
@@ -231,6 +246,7 @@ public:
      * Gets the length (number of bytes) in the current frame being written into the buffer.
      *
      * @returns The length (number of bytes) in the frame.
+     *
      */
     uint16_t GetLength(void) const { return static_cast<uint16_t>(mWritePointer - GetFrame()); }
 
@@ -241,6 +257,7 @@ public:
      *
      * @retval OT_ERROR_NONE     Successfully set the length of reserved buffer.
      * @retval OT_ERROR_NO_BUFS  Insufficient buffer space to hold a reserved buffer of length @p aLength.
+     *
      */
     otError SetSkipLength(uint16_t aSkipLength)
     {
@@ -261,6 +278,7 @@ public:
      * Gets the length (number of bytes) of reserved buffer in front of the current frame being written.
      *
      * @returns The length (number of bytes) of the reserved buffer.
+     *
      */
     uint16_t GetSkipLength(void) const
     {
@@ -271,6 +289,7 @@ public:
      * Gets a pointer to the start of the current frame.
      *
      * @returns A pointer to the start of the frame.
+     *
      */
     uint8_t *GetFrame(void) const { return mWriteFrameStart + kHeaderSize + GetSkipLength(); }
 
@@ -278,6 +297,7 @@ public:
      * Gets the maximum length of the current frame.
      *
      * @returns The maximum length of the current frame.
+     *
      */
     uint16_t GetFrameMaxLength(void) const { return static_cast<uint16_t>(mBuffer + kSize - GetFrame()); }
 
@@ -313,6 +333,7 @@ public:
     /**
      * Discards the current frame and prepares the write pointer for a next frame to be written into the
      * buffer.
+     *
      */
     void DiscardFrame(void)
     {
@@ -327,6 +348,7 @@ public:
      *
      * @retval TRUE  There is at least one saved frame in the buffer.
      * @retval FALSE There is no saved frame in the buffer.
+     *
      */
     bool HasSavedFrame(void) const { return (mWriteFrameStart != mBuffer); }
 
@@ -341,6 +363,7 @@ public:
      *
      * @retval OT_ERROR_NONE       Updated @aFrame and @aLength successfully with the next saved frame.
      * @retval OT_ERROR_NOT_FOUND  No more saved frame in the buffer.
+     *
      */
     otError GetNextSavedFrame(uint8_t *&aFrame, uint16_t &aLength)
     {
@@ -374,6 +397,7 @@ public:
      * @note This method moves the pointers into the buffer and also copies the content. Any previously retrieved
      * pointer to buffer (from `GetFrame()` or `GetNextSavedFrame()`) should be considered invalid after calling this
      * method.
+     *
      */
     void ClearSavedFrames(void)
     {

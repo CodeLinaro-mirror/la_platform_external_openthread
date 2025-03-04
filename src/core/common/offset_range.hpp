@@ -47,6 +47,7 @@ class Message;
 
 /**
  * Represents an offset range.
+ *
  */
 class OffsetRange : public Clearable<OffsetRange>
 {
@@ -56,6 +57,7 @@ public:
      *
      * @param[in] aOffset   The start offset.
      * @param[in] aLength   The range length (number of bytes).
+     *
      */
     void Init(uint16_t aOffset, uint16_t aLength);
 
@@ -66,6 +68,7 @@ public:
      *
      * @param[in]  aStartOffset The start offset (inclusive).
      * @param[in]  aEndOffset   The end offset (exclusive).
+     *
      */
     void InitFromRange(uint16_t aStartOffset, uint16_t aEndOffset);
 
@@ -76,6 +79,7 @@ public:
      * in the message up to its current length `aMessage.GetLength()`.
      *
      * @param[in] aMessage    The `Message` to initialize the `OffsetRange` from.
+     *
      */
     void InitFromMessageOffsetToEnd(const Message &aMessage);
 
@@ -85,6 +89,7 @@ public:
      * The start offset of the range is set to zero, and the end offset is set to include full length of @p aMessage.
      *
      * @param[in] aMessage    The `Message` to initialize the `OffsetRange` from.
+     *
      */
     void InitFromMessageFullLength(const Message &aMessage);
 
@@ -92,6 +97,7 @@ public:
      * Gets the start offset of the `OffsetRange`
      *
      * @returns The start offset.
+     *
      */
     uint16_t GetOffset(void) const { return mOffset; }
 
@@ -101,6 +107,7 @@ public:
      * This offset is exclusive, meaning it marks the position immediately after the last byte within the range.
      *
      * @returns The end offset.
+     *
      */
     uint16_t GetEndOffset(void) const { return (mOffset + mLength); }
 
@@ -108,6 +115,7 @@ public:
      * Gets the `OffsetRange` length.
      *
      * @returns The length of the `OffsetRange` in bytes.
+     *
      */
     uint16_t GetLength(void) const { return mLength; }
 
@@ -116,6 +124,7 @@ public:
      *
      * @retval TRUE   The `OffsetRange` is empty.
      * @retval FALSE  The `OffsetRange` is not empty (contains at least one byte).
+     *
      */
     bool IsEmpty(void) const { return (mLength == 0); }
 
@@ -126,6 +135,7 @@ public:
      *
      * @retval TRUE   The `OffsetRange` contains @p aLength or more bytes.
      * @retval FALSE  The `OffsetRange` does not contain @p aLength bytes.
+     *
      */
     bool Contains(uint32_t aLength) const { return aLength <= mLength; }
 
@@ -137,6 +147,7 @@ public:
      * effectively shrinking the range to zero length.
      *
      * @param[in]  aLength   The number of bytes to advance the start offset.
+     *
      */
     void AdvanceOffset(uint32_t aLength);
 
@@ -147,6 +158,7 @@ public:
      * @p aLength. If the range is already shorter or the same, it remains unchanged.
      *
      * @param[in] aLength  The new length to use.
+     *
      */
     void ShrinkLength(uint16_t aLength);
 

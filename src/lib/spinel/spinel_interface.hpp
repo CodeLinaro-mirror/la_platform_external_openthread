@@ -29,6 +29,7 @@
 /**
  * @file
  *   This file includes definitions for the spinel interface to Radio Co-processor (RCP)
+ *
  */
 
 #ifndef SPINEL_SPINEL_INTERFACE_HPP_
@@ -56,6 +57,7 @@ public:
      *
      * @note The receive frame buffer is an `Spinel::MultiFrameBuffer` and therefore it is capable of storing multiple
      * frames in a FIFO queue manner.
+     *
      */
     typedef MultiFrameBuffer<kMaxFrameSize> RxFrameBuffer;
 
@@ -73,11 +75,13 @@ public:
      * @retval OT_ERROR_NONE       The interface is initialized successfully
      * @retval OT_ERROR_ALREADY    The interface is already initialized.
      * @retval OT_ERROR_FAILED     Failed to initialize the interface.
+     *
      */
     virtual otError Init(ReceiveFrameCallback aCallback, void *aCallbackContext, RxFrameBuffer &aFrameBuffer) = 0;
 
     /**
      * Deinitializes the interface to the RCP.
+     *
      */
     virtual void Deinit(void) = 0;
 
@@ -91,6 +95,7 @@ public:
      * @retval OT_ERROR_BUSY     Failed due to another operation is on going.
      * @retval OT_ERROR_NO_BUFS  Insufficient buffer space available to encode the frame.
      * @retval OT_ERROR_FAILED   Failed to call the SPI driver to send the frame.
+     *
      */
     virtual otError SendFrame(const uint8_t *aFrame, uint16_t aLength) = 0;
 
@@ -101,6 +106,7 @@ public:
      *
      * @retval OT_ERROR_NONE             Part or all of spinel frame is received.
      * @retval OT_ERROR_RESPONSE_TIMEOUT No spinel frame is received within @p aTimeout.
+     *
      */
     virtual otError WaitForFrame(uint64_t aTimeoutUs) = 0;
 
@@ -108,6 +114,7 @@ public:
      * Updates the file descriptor sets with file descriptors used by the radio driver.
      *
      * @param[in,out]   aMainloopContext  A pointer to the mainloop context.
+     *
      */
     virtual void UpdateFdSet(void *aMainloopContext) = 0;
 
@@ -115,6 +122,7 @@ public:
      * Performs radio driver processing.
      *
      * @param[in]   aMainloopContext  A pointer to the mainloop context.
+     *
      */
     virtual void Process(const void *aMainloopContext) = 0;
 
@@ -122,6 +130,7 @@ public:
      * Returns the bus speed between the host and the radio.
      *
      * @returns   Bus speed in bits/second.
+     *
      */
     virtual uint32_t GetBusSpeed(void) const = 0;
 
@@ -130,6 +139,7 @@ public:
      *
      * @retval OT_ERROR_NONE            Successfully reset the RCP.
      * @retval OT_ERROR_NOT_IMPLEMENT   The hardware reset is not implemented.
+     *
      */
     virtual otError HardwareReset(void) = 0;
 
@@ -137,11 +147,13 @@ public:
      * Returns the RCP interface metrics.
      *
      * @returns The RCP interface metrics.
+     *
      */
     virtual const otRcpInterfaceMetrics *GetRcpInterfaceMetrics(void) const = 0;
 
     /**
      * Marks destructor virtual method.
+     *
      */
     virtual ~SpinelInterface() = default;
 
@@ -161,6 +173,7 @@ protected:
      *
      * @retval true  If the frame is a Spinel SPINEL_CMD_RESET frame.
      * @retval false If the frame is not a Spinel SPINEL_CMD_RESET frame.
+     *
      */
     bool IsSpinelResetCommand(const uint8_t *aFrame, uint16_t aLength)
     {

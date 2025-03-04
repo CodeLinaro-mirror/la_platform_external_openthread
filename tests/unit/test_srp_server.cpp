@@ -1076,8 +1076,8 @@ void TestSrpClientDelayedResponse(void)
 
         sServerRxCount = 0;
 
-        SuccessOrQuit(udpSocket.Open(Ip6::kNetifThreadInternal));
-        SuccessOrQuit(udpSocket.Bind(kServerPort));
+        SuccessOrQuit(udpSocket.Open());
+        SuccessOrQuit(udpSocket.Bind(kServerPort, Ip6::kNetifThread));
 
         //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
         // Manually start the client with a message ID based on `testIter`

@@ -67,6 +67,7 @@ namespace NetworkData {
  *
  * It provides mechanisms to limit the number of similar Service and/or Prefix (on-mesh prefix or external route)
  * entries in the Thread Network Data by monitoring the Network Data and managing if or when to add or remove entries.
+ *
  */
 class Publisher : public InstanceLocator, private NonCopyable
 {
@@ -75,6 +76,7 @@ class Publisher : public InstanceLocator, private NonCopyable
 public:
     /**
      * Represents the events reported from the Publisher callbacks.
+     *
      */
     enum Event : uint8_t
     {
@@ -84,6 +86,7 @@ public:
 
     /**
      * Represents the requester associated with a published prefix.
+     *
      */
     enum Requester : uint8_t
     {
@@ -95,6 +98,7 @@ public:
      * Initializes `Publisher` object.
      *
      * @param[in]  aInstance     A reference to the OpenThread instance.
+     *
      */
     explicit Publisher(Instance &aInstance);
 
@@ -107,6 +111,7 @@ public:
      * On remove the callback is invoked independent of whether the entry is removed by `Publisher` (e.g., when there
      * are too many similar entries already present in the Network Data) or through an explicit call to unpublish the
      * entry (i.e., a call to `UnpublishDnsSrpService()`).
+     *
      */
     typedef otNetDataDnsSrpServicePublisherCallback DnsSrpServiceCallback;
 
@@ -118,6 +123,7 @@ public:
      *
      * @param[in] aCallback        The callback function pointer (can be NULL if not needed).
      * @param[in] aContext         A pointer to application-specific context (used when @p aCallback is invoked).
+     *
      */
     void SetDnsSrpServiceCallback(DnsSrpServiceCallback aCallback, void *aContext)
     {
@@ -131,12 +137,9 @@ public:
      * (from earlier call to any of `PublishDnsSrpService{Type}()` methods).
      *
      * @param[in] aSequenceNumber  The sequence number of DNS/SRP Anycast Service.
-     * @param[in] aVersion         The version number of DNS/SRP service.
+     *
      */
-    void PublishDnsSrpServiceAnycast(uint8_t aSequenceNumber, uint8_t aVersion)
-    {
-        mDnsSrpServiceEntry.PublishAnycast(aSequenceNumber, aVersion);
-    }
+    void PublishDnsSrpServiceAnycast(uint8_t aSequenceNumber) { mDnsSrpServiceEntry.PublishAnycast(aSequenceNumber); }
 
     /**
      * Requests "DNS/SRP Service Unicast Address" to be published in the Thread Network Data.
@@ -149,11 +152,11 @@ public:
      *
      * @param[in] aAddress   The DNS/SRP server address to publish.
      * @param[in] aPort      The SRP server port number to publish.
-     * @param[in] aVersion   The SRP server version to publish.
+     *
      */
-    void PublishDnsSrpServiceUnicast(const Ip6::Address &aAddress, uint16_t aPort, uint8_t aVersion)
+    void PublishDnsSrpServiceUnicast(const Ip6::Address &aAddress, uint16_t aPort)
     {
-        mDnsSrpServiceEntry.PublishUnicast(aAddress, aPort, aVersion);
+        mDnsSrpServiceEntry.PublishUnicast(aAddress, aPort);
     }
 
     /**
@@ -167,24 +170,23 @@ public:
      * in the Server TLV data.
      *
      * @param[in] aPort      The SRP server port number to publish.
-     * @param[in] aVersion   The SRP server version to publish.
+     *
      */
-    void PublishDnsSrpServiceUnicast(uint16_t aPort, uint8_t aVersion)
-    {
-        mDnsSrpServiceEntry.PublishUnicast(aPort, aVersion);
-    }
+    void PublishDnsSrpServiceUnicast(uint16_t aPort) { mDnsSrpServiceEntry.PublishUnicast(aPort); }
 
     /**
      * Indicates whether or not currently the "DNS/SRP Service" entry is added to the Thread Network Data.
      *
      * @retval TRUE    The published DNS/SRP Service entry is added to the Thread Network Data.
      * @retval FALSE   The entry is not added to Thread Network Data or there is no entry to publish.
+     *
      */
     bool IsDnsSrpServiceAdded(void) const { return mDnsSrpServiceEntry.IsAdded(); }
 
     /**
      * Unpublishes any previously added "DNS/SRP (Anycast or Unicast) Service" entry from the Thread
      * Network Data.
+     *
      */
     void UnpublishDnsSrpService(void) { mDnsSrpServiceEntry.Unpublish(); }
 
@@ -198,6 +200,7 @@ public:
      * On remove the callback is invoked independent of whether the entry is removed by `Publisher` (e.g., when there
      * are too many similar entries already present in the Network Data) or through an explicit call to unpublish the
      * entry.
+     *
      */
     typedef otNetDataPrefixPublisherCallback PrefixCallback;
 
@@ -209,6 +212,7 @@ public:
      *
      * @param[in] aCallback        The callback function pointer (can be NULL if not needed).
      * @param[in] aContext         A pointer to application-specific context (used when @p aCallback is invoked).
+     *
      */
     void SetPrefixCallback(PrefixCallback aCallback, void *aContext) { mPrefixCallback.Set(aCallback, aContext); }
 
@@ -233,6 +237,8 @@ public:
      * @retval kErrorNoBufs       Could not allocate an entry for the new request. Publisher supports a limited number
      *                            of entries (shared between on-mesh prefix and external route) determined by config
      *                            `OPENTHREAD_CONFIG_NETDATA_PUBLISHER_MAX_PREFIX_ENTRIES`.
+     *
+     *
      */
     Error PublishOnMeshPrefix(const OnMeshPrefixConfig &aConfig, Requester aRequester);
 
@@ -256,6 +262,8 @@ public:
      * @retval kErrorNoBufs       Could not allocate an entry for the new request. Publisher supports a limited number
      *                            of entries (shared between on-mesh prefix and external route) determined by config
      *                            `OPENTHREAD_CONFIG_NETDATA_PUBLISHER_MAX_PREFIX_ENTRIES`.
+     *
+     *
      */
     Error PublishExternalRoute(const ExternalRouteConfig &aConfig, Requester aRequester);
 
@@ -289,6 +297,8 @@ public:
      * @retval kErrorNoBufs       Could not allocate an entry for the new request. Publisher supports a limited number
      *                            of entries (shared between on-mesh prefix and external route) determined by config
      *                            `OPENTHREAD_CONFIG_NETDATA_PUBLISHER_MAX_PREFIX_ENTRIES`.
+     *
+     *
      */
     Error ReplacePublishedExternalRoute(const Ip6::Prefix         &aPrefix,
                                         const ExternalRouteConfig &aConfig,
@@ -302,6 +312,7 @@ public:
      *
      * @retval TRUE    The published prefix entry is added to the Thread Network Data.
      * @retval FALSE   The entry is not added to Thread Network Data or there is no matching entry to publish.
+     *
      */
     bool IsPrefixAdded(const Ip6::Prefix &aPrefix) const;
 
@@ -312,6 +323,7 @@ public:
      *
      * @retval kErrorNone       The prefix was unpublished successfully.
      * @retval kErrorNotFound   Could not find the prefix in the published list.
+     *
      */
     Error UnpublishPrefix(const Ip6::Prefix &aPrefix);
 #endif // OPENTHREAD_CONFIG_BORDER_ROUTER_ENABLE
@@ -374,9 +386,9 @@ private:
     public:
         explicit DnsSrpServiceEntry(Instance &aInstance);
         void SetCallback(DnsSrpServiceCallback aCallback, void *aContext) { mCallback.Set(aCallback, aContext); }
-        void PublishAnycast(uint8_t aSequenceNumber, uint8_t aVersion);
-        void PublishUnicast(const Ip6::Address &aAddress, uint16_t aPort, uint8_t aVersion);
-        void PublishUnicast(uint16_t aPort, uint8_t aVersion);
+        void PublishAnycast(uint8_t aSequenceNumber);
+        void PublishUnicast(const Ip6::Address &aAddress, uint16_t aPort);
+        void PublishUnicast(uint16_t aPort);
         void Unpublish(void);
         void HandleTimer(void) { Entry::HandleTimer(); }
         void HandleNotifierEvents(Events aEvents);
@@ -402,25 +414,20 @@ private:
             Type                GetType(void) const { return mType; }
             uint8_t             GetSequenceNumber(void) const { return static_cast<uint8_t>(mPortOrSeqNumber); }
             uint16_t            GetPort(void) const { return mPortOrSeqNumber; }
-            uint8_t             GetVersion(void) const { return mVersion; }
             const Ip6::Address &GetAddress(void) const { return mAddress; }
             void                SetAddress(const Ip6::Address &aAddress) { mAddress = aAddress; }
 
-            static Info InfoAnycast(uint8_t aSequenceNumber, uint8_t aVersion)
+            static Info InfoAnycast(uint8_t aSequenceNumber) { return Info(kTypeAnycast, aSequenceNumber); }
+            static Info InfoUnicast(Type aType, const Ip6::Address &aAddress, uint16_t aPort)
             {
-                return Info(kTypeAnycast, aSequenceNumber, aVersion);
-            }
-            static Info InfoUnicast(Type aType, const Ip6::Address &aAddress, uint16_t aPort, uint8_t aVersion)
-            {
-                return Info(aType, aPort, aVersion, &aAddress);
+                return Info(aType, aPort, &aAddress);
             }
 
         private:
-            Info(Type aType, uint16_t aPortOrSeqNumber, uint8_t aVersion, const Ip6::Address *aAddress = nullptr);
+            Info(Type aType, uint16_t aPortOrSeqNumber, const Ip6::Address *aAddress = nullptr);
 
             Ip6::Address mAddress;
             uint16_t     mPortOrSeqNumber;
-            uint8_t      mVersion;
             Type         mType;
         };
 

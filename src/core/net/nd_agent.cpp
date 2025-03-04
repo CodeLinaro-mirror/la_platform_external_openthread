@@ -35,7 +35,12 @@
 
 #if OPENTHREAD_CONFIG_NEIGHBOR_DISCOVERY_AGENT_ENABLE
 
-#include "instance/instance.hpp"
+#include "common/as_core_type.hpp"
+#include "common/locator_getters.hpp"
+#include "thread/lowpan.hpp"
+#include "thread/mle_router.hpp"
+#include "thread/network_data_leader.hpp"
+#include "thread/thread_netif.hpp"
 
 namespace ot {
 namespace NeighborDiscovery {

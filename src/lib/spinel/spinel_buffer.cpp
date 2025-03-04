@@ -34,7 +34,7 @@
 
 #include <assert.h>
 
-#include "common/code_utils.hpp"
+#include "lib/utils/utils.hpp"
 
 namespace ot {
 namespace Spinel {
@@ -253,7 +253,7 @@ otError Buffer::InFrameBeginSegment(void)
     uint16_t headerFlags = kSegmentHeaderNoFlag;
 
     // Verify that segment is not yet started (i.e., head and tail are the same).
-    VerifyOrExit(mWriteSegmentHead == mWriteSegmentTail);
+    EXPECT(mWriteSegmentHead == mWriteSegmentTail, NO_ACTION);
 
     // Check if this is the start of a new frame (i.e., frame start is same as segment head).
     if (mWriteFrameStart[mWriteDirection] == mWriteSegmentHead)
@@ -264,7 +264,7 @@ otError Buffer::InFrameBeginSegment(void)
     // Reserve space for the segment header.
     for (uint16_t i = kSegmentHeaderSize; i; i--)
     {
-        SuccessOrExit(error = InFrameAppend(0));
+        EXPECT_NO_ERROR(error = InFrameAppend(0));
     }
 
     // Write the flags at the segment head.
@@ -310,7 +310,7 @@ void Buffer::InFrameDiscard(void)
     otMessage *message;
 #endif
 
-    VerifyOrExit(mWriteDirection != kUnknown);
+    EXPECT(mWriteDirection != kUnknown, NO_ACTION);
 
     // Move the write segment head and tail pointers back to frame start.
     mWriteSegmentHead = mWriteSegmentTail = mWriteFrameStart[mWriteDirection];
@@ -362,10 +362,10 @@ otError Buffer::InFrameFeedByte(uint8_t aByte)
 {
     otError error = OT_ERROR_NONE;
 
-    VerifyOrExit(mWriteDirection != kUnknown, error = OT_ERROR_INVALID_STATE);
+    EXPECT(mWriteDirection != kUnknown, error = OT_ERROR_INVALID_STATE);
 
     // Begin a new segment (if we are not in middle of segment already).
-    SuccessOrExit(error = InFrameBeginSegment());
+    EXPECT_NO_ERROR(error = InFrameBeginSegment());
 
     error = InFrameAppend(aByte);
 
@@ -377,15 +377,15 @@ otError Buffer::InFrameFeedData(const uint8_t *aDataBuffer, uint16_t aDataBuffer
 {
     otError error = OT_ERROR_NONE;
 
-    VerifyOrExit(mWriteDirection != kUnknown, error = OT_ERROR_INVALID_STATE);
+    EXPECT(mWriteDirection != kUnknown, error = OT_ERROR_INVALID_STATE);
 
     // Begin a new segment (if we are not in middle of segment already).
-    SuccessOrExit(error = InFrameBeginSegment());
+    EXPECT_NO_ERROR(error = InFrameBeginSegment());
 
     // Write the data buffer
     while (aDataBufferLength--)
     {
-        SuccessOrExit(error = InFrameAppend(*aDataBuffer++));
+        EXPECT_NO_ERROR(error = InFrameAppend(*aDataBuffer++));
     }
 
 exit:
@@ -397,11 +397,11 @@ otError Buffer::InFrameFeedMessage(otMessage *aMessage)
 {
     otError error = OT_ERROR_NONE;
 
-    VerifyOrExit(aMessage != nullptr, error = OT_ERROR_INVALID_ARGS);
-    VerifyOrExit(mWriteDirection != kUnknown, error = OT_ERROR_INVALID_STATE);
+    EXPECT(aMessage != nullptr, error = OT_ERROR_INVALID_ARGS);
+    EXPECT(mWriteDirection != kUnknown, error = OT_ERROR_INVALID_STATE);
 
     // Begin a new segment (if we are not in middle of segment already).
-    SuccessOrExit(error = InFrameBeginSegment());
+    EXPECT_NO_ERROR(error = InFrameBeginSegment());
 
     // Enqueue the message in the current write frame queue.
     otMessageQueueEnqueue(&mWriteFrameMessageQueue, aMessage);
@@ -418,10 +418,10 @@ otError Buffer::InFrameGetPosition(WritePosition &aPosition)
 {
     otError error = OT_ERROR_NONE;
 
-    VerifyOrExit(mWriteDirection != kUnknown, error = OT_ERROR_INVALID_STATE);
+    EXPECT(mWriteDirection != kUnknown, error = OT_ERROR_INVALID_STATE);
 
     // Begin a new segment (if we are not in middle of segment already).
-    SuccessOrExit(error = InFrameBeginSegment());
+    EXPECT_NO_ERROR(error = InFrameBeginSegment());
 
     aPosition.mPosition    = mWriteSegmentTail;
     aPosition.mSegmentHead = mWriteSegmentHead;
@@ -437,14 +437,14 @@ otError Buffer::InFrameOverwrite(const WritePosition &aPosition, const uint8_t *
     uint16_t segmentLength;
     uint16_t distance;
 
-    VerifyOrExit(mWriteDirection != kUnknown, error = OT_ERROR_INVALID_STATE);
+    EXPECT(mWriteDirection != kUnknown, error = OT_ERROR_INVALID_STATE);
 
-    VerifyOrExit(aPosition.mSegmentHead == mWriteSegmentHead, error = OT_ERROR_INVALID_ARGS);
+    EXPECT(aPosition.mSegmentHead == mWriteSegmentHead, error = OT_ERROR_INVALID_ARGS);
 
     // Ensure the overwrite does not go beyond current segment tail.
     segmentLength = GetDistance(mWriteSegmentHead, mWriteSegmentTail, mWriteDirection);
     distance      = GetDistance(mWriteSegmentHead, aPosition.mPosition, mWriteDirection);
-    VerifyOrExit(distance + aDataBufferLength <= segmentLength, error = OT_ERROR_INVALID_ARGS);
+    EXPECT(distance + aDataBufferLength <= segmentLength, error = OT_ERROR_INVALID_ARGS);
 
     bufPtr = aPosition.mPosition;
     while (aDataBufferLength > 0)
@@ -467,12 +467,12 @@ uint16_t Buffer::InFrameGetDistance(const WritePosition &aPosition) const
     uint16_t segmentLength;
     uint16_t offset;
 
-    VerifyOrExit(mWriteDirection != kUnknown);
-    VerifyOrExit(aPosition.mSegmentHead == mWriteSegmentHead);
+    EXPECT(mWriteDirection != kUnknown, NO_ACTION);
+    EXPECT(aPosition.mSegmentHead == mWriteSegmentHead, NO_ACTION);
 
     segmentLength = GetDistance(mWriteSegmentHead, mWriteSegmentTail, mWriteDirection);
     offset        = GetDistance(mWriteSegmentHead, aPosition.mPosition, mWriteDirection);
-    VerifyOrExit(offset < segmentLength);
+    EXPECT(offset < segmentLength, NO_ACTION);
 
     distance = GetDistance(aPosition.mPosition, mWriteSegmentTail, mWriteDirection);
 
@@ -486,12 +486,12 @@ otError Buffer::InFrameReset(const WritePosition &aPosition)
     uint16_t segmentLength;
     uint16_t offset;
 
-    VerifyOrExit(mWriteDirection != kUnknown, error = OT_ERROR_INVALID_STATE);
-    VerifyOrExit(aPosition.mSegmentHead == mWriteSegmentHead, error = OT_ERROR_INVALID_ARGS);
+    EXPECT(mWriteDirection != kUnknown, error = OT_ERROR_INVALID_STATE);
+    EXPECT(aPosition.mSegmentHead == mWriteSegmentHead, error = OT_ERROR_INVALID_ARGS);
 
     segmentLength = GetDistance(mWriteSegmentHead, mWriteSegmentTail, mWriteDirection);
     offset        = GetDistance(mWriteSegmentHead, aPosition.mPosition, mWriteDirection);
-    VerifyOrExit(offset < segmentLength, error = OT_ERROR_INVALID_ARGS);
+    EXPECT(offset < segmentLength, error = OT_ERROR_INVALID_ARGS);
 
     mWriteSegmentTail = aPosition.mPosition;
 
@@ -506,7 +506,7 @@ otError Buffer::InFrameEnd(void)
 #endif
     otError error = OT_ERROR_NONE;
 
-    VerifyOrExit(mWriteDirection != kUnknown, error = OT_ERROR_INVALID_STATE);
+    EXPECT(mWriteDirection != kUnknown, error = OT_ERROR_INVALID_STATE);
 
     // End/Close the current segment (if any).
     InFrameEndSegment(kSegmentHeaderNoFlag);
@@ -563,7 +563,7 @@ otError Buffer::OutFramePrepareSegment(void)
         mReadSegmentHead = mReadSegmentTail;
 
         // Ensure there is something to read (i.e. segment head is not at start of frame being written).
-        VerifyOrExit(mReadSegmentHead != mWriteFrameStart[mReadDirection], error = OT_ERROR_NOT_FOUND);
+        EXPECT(mReadSegmentHead != mWriteFrameStart[mReadDirection], error = OT_ERROR_NOT_FOUND);
 
         // Read the segment header.
         header = ReadUint16At(mReadSegmentHead, mReadDirection);
@@ -572,7 +572,7 @@ otError Buffer::OutFramePrepareSegment(void)
         if (header & kSegmentHeaderNewFrameFlag)
         {
             // Ensure that this segment is start of current frame, otherwise the current frame is finished.
-            VerifyOrExit(mReadSegmentHead == mReadFrameStart[mReadDirection], error = OT_ERROR_NOT_FOUND);
+            EXPECT(mReadSegmentHead == mReadFrameStart[mReadDirection], error = OT_ERROR_NOT_FOUND);
         }
 
         // Find tail/end of current segment.
@@ -588,14 +588,14 @@ otError Buffer::OutFramePrepareSegment(void)
             // Update the state to `InSegment` and return.
             mReadState = kReadStateInSegment;
 
-            ExitNow();
+            EXIT_NOW();
         }
 
 #if OPENTHREAD_SPINEL_CONFIG_OPENTHREAD_MESSAGE_ENABLE
         // No data in this segment,  prepare any appended/associated message of this segment.
         if (OutFramePrepareMessage() == OT_ERROR_NONE)
         {
-            ExitNow();
+            EXIT_NOW();
         }
 
         // If there is no message (`PrepareMessage()` returned an error), loop back to prepare the next segment.
@@ -624,19 +624,19 @@ otError Buffer::OutFramePrepareMessage(void)
     header = ReadUint16At(mReadSegmentHead, mReadDirection);
 
     // Ensure that the segment header indicates that there is an associated message or return `NotFound` error.
-    VerifyOrExit((header & kSegmentHeaderMessageIndicatorFlag) != 0, error = OT_ERROR_NOT_FOUND);
+    EXPECT((header & kSegmentHeaderMessageIndicatorFlag) != 0, error = OT_ERROR_NOT_FOUND);
 
     // Update the current message from the queue.
     mReadMessage = (mReadMessage == nullptr) ? otMessageQueueGetHead(&mMessageQueue[mReadDirection])
                                              : otMessageQueueGetNext(&mMessageQueue[mReadDirection], mReadMessage);
 
-    VerifyOrExit(mReadMessage != nullptr, error = OT_ERROR_NOT_FOUND);
+    EXPECT(mReadMessage != nullptr, error = OT_ERROR_NOT_FOUND);
 
     // Reset the offset for reading the message.
     mReadMessageOffset = 0;
 
     // Fill the content from current message into the message buffer.
-    SuccessOrExit(error = OutFrameFillMessageBuffer());
+    EXPECT_NO_ERROR(error = OutFrameFillMessageBuffer());
 
     // If all successful, set the state to `InMessage`.
     mReadState = kReadStateInMessage;
@@ -652,14 +652,14 @@ otError Buffer::OutFrameFillMessageBuffer(void)
     otError error = OT_ERROR_NONE;
     int     readLength;
 
-    VerifyOrExit(mReadMessage != nullptr, error = OT_ERROR_NOT_FOUND);
+    EXPECT(mReadMessage != nullptr, error = OT_ERROR_NOT_FOUND);
 
-    VerifyOrExit(mReadMessageOffset < otMessageGetLength(mReadMessage), error = OT_ERROR_NOT_FOUND);
+    EXPECT(mReadMessageOffset < otMessageGetLength(mReadMessage), error = OT_ERROR_NOT_FOUND);
 
     // Read portion of current message from the offset into message buffer.
     readLength = otMessageRead(mReadMessage, mReadMessageOffset, mMessageBuffer, sizeof(mMessageBuffer));
 
-    VerifyOrExit(readLength > 0, error = OT_ERROR_NOT_FOUND);
+    EXPECT(readLength > 0, error = OT_ERROR_NOT_FOUND);
 
     // Update the message offset, set up the message tail, and set read pointer to start of message buffer.
 
@@ -678,7 +678,7 @@ otError Buffer::OutFrameBegin(void)
 {
     otError error = OT_ERROR_NONE;
 
-    VerifyOrExit(!IsEmpty(), error = OT_ERROR_NOT_FOUND);
+    EXPECT(!IsEmpty(), error = OT_ERROR_NOT_FOUND);
 
     OutFrameSelectReadDirection();
 
@@ -733,7 +733,7 @@ uint8_t Buffer::OutFrameReadByte(void)
             // If there is no message, move to next segment (if any).
             if (error != OT_ERROR_NONE)
             {
-                IgnoreReturnValue(OutFramePrepareSegment());
+                IGNORE_RETURN(OutFramePrepareSegment());
             }
         }
 
@@ -754,7 +754,7 @@ uint8_t Buffer::OutFrameReadByte(void)
             // If no more bytes in the message, move to next segment (if any).
             if (error != OT_ERROR_NONE)
             {
-                IgnoreReturnValue(OutFramePrepareSegment());
+                IGNORE_RETURN(OutFramePrepareSegment());
             }
         }
 #endif
@@ -784,9 +784,7 @@ otError Buffer::OutFrameRemove(void)
     uint8_t  numSegments;
     FrameTag tag;
 
-    OT_UNUSED_VARIABLE(numSegments);
-
-    VerifyOrExit(!IsEmpty(), error = OT_ERROR_NOT_FOUND);
+    EXPECT(!IsEmpty(), error = OT_ERROR_NOT_FOUND);
 
     OutFrameSelectReadDirection();
 
@@ -861,7 +859,7 @@ void Buffer::UpdateReadWriteStartPointers(void)
         // Move the high priority pointers to be right behind the low priority start.
         mWriteFrameStart[kPriorityHigh] = GetUpdatedBufPtr(mReadFrameStart[kPriorityLow], 1, kBackward);
         mReadFrameStart[kPriorityHigh]  = mWriteFrameStart[kPriorityHigh];
-        ExitNow();
+        EXIT_NOW();
     }
 
     // If there is no fully written low priority frame, and not in middle of writing a new frame either.
@@ -886,12 +884,10 @@ uint16_t Buffer::OutFrameGetLength(void)
     otMessage *message = nullptr;
 #endif
 
-    OT_UNUSED_VARIABLE(numSegments);
-
     // If the frame length was calculated before, return the previously calculated length.
-    VerifyOrExit(mReadFrameLength == kUnknownFrameLength, frameLength = mReadFrameLength);
+    EXPECT(mReadFrameLength == kUnknownFrameLength, frameLength = mReadFrameLength);
 
-    VerifyOrExit(!IsEmpty(), frameLength = 0);
+    EXPECT(!IsEmpty(), frameLength = 0);
 
     OutFrameSelectReadDirection();
 

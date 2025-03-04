@@ -31,6 +31,7 @@ source "tests/scripts/expect/_common.exp"
 
 spawn_node 1 "cli"
 
+switch_node 1
 send "tcat advid ianapen f378\n"
 expect_line "Done"
 
@@ -88,5 +89,3 @@ expect_line "Done"
 
 send "tcat devid\n"
 expect_line "Done"
-
-dispose_all

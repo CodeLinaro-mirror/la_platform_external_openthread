@@ -33,7 +33,17 @@
 
 #include "data_poll_sender.hpp"
 
+#include "common/code_utils.hpp"
+#include "common/locator_getters.hpp"
+#include "common/log.hpp"
+#include "common/message.hpp"
+#include "common/num_utils.hpp"
 #include "instance/instance.hpp"
+#include "net/ip6.hpp"
+#include "net/netif.hpp"
+#include "thread/mesh_forwarder.hpp"
+#include "thread/mle.hpp"
+#include "thread/thread_netif.hpp"
 
 namespace ot {
 
@@ -542,36 +552,33 @@ uint32_t DataPollSender::GetDefaultPollPeriod(void) const
 
 Mac::TxFrame *DataPollSender::PrepareDataRequest(Mac::TxFrames &aTxFrames)
 {
-    Mac::TxFrame      *frame = nullptr;
-    Mac::TxFrame::Info frameInfo;
+    Mac::TxFrame  *frame = nullptr;
+    Mac::Addresses addresses;
+    Mac::PanIds    panIds;
 
 #if OPENTHREAD_CONFIG_MULTI_RADIO
     Mac::RadioType radio;
 
-    SuccessOrExit(GetPollDestinationAddress(frameInfo.mAddrs.mDestination, radio));
+    SuccessOrExit(GetPollDestinationAddress(addresses.mDestination, radio));
     frame = &aTxFrames.GetTxFrame(radio);
 #else
-    SuccessOrExit(GetPollDestinationAddress(frameInfo.mAddrs.mDestination));
+    SuccessOrExit(GetPollDestinationAddress(addresses.mDestination));
     frame = &aTxFrames.GetTxFrame();
 #endif
 
-    if (frameInfo.mAddrs.mDestination.IsExtended())
+    if (addresses.mDestination.IsExtended())
     {
-        frameInfo.mAddrs.mSource.SetExtended(Get<Mac::Mac>().GetExtAddress());
+        addresses.mSource.SetExtended(Get<Mac::Mac>().GetExtAddress());
     }
     else
     {
-        frameInfo.mAddrs.mSource.SetShort(Get<Mac::Mac>().GetShortAddress());
+        addresses.mSource.SetShort(Get<Mac::Mac>().GetShortAddress());
     }
 
-    frameInfo.mPanIds.SetBothSourceDestination(Get<Mac::Mac>().GetPanId());
+    panIds.SetBothSourceDestination(Get<Mac::Mac>().GetPanId());
 
-    frameInfo.mType          = Mac::Frame::kTypeMacCmd;
-    frameInfo.mCommandId     = Mac::Frame::kMacCmdDataRequest;
-    frameInfo.mSecurityLevel = Mac::Frame::kSecurityEncMic32;
-    frameInfo.mKeyIdMode     = Mac::Frame::kKeyIdMode1;
-
-    Get<MeshForwarder>().PrepareMacHeaders(*frame, frameInfo, nullptr);
+    Get<MeshForwarder>().PrepareMacHeaders(*frame, Mac::Frame::kTypeMacCmd, addresses, panIds,
+                                           Mac::Frame::kSecurityEncMic32, Mac::Frame::kKeyIdMode1, nullptr);
 
 #if OPENTHREAD_CONFIG_MAC_HEADER_IE_SUPPORT && OPENTHREAD_CONFIG_MAC_CSL_RECEIVER_ENABLE
     if (frame->HasCslIe())
@@ -580,6 +587,8 @@ Mac::TxFrame *DataPollSender::PrepareDataRequest(Mac::TxFrames &aTxFrames)
         aTxFrames.SetMaxFrameRetries(0);
     }
 #endif
+
+    IgnoreError(frame->SetCommandId(Mac::Frame::kMacCmdDataRequest));
 
 exit:
     return frame;

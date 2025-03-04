@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2024, The OpenThread Authors.
+ *  Copyright (c) 2016, The OpenThread Authors.
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -26,35 +26,68 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <openthread/platform/alarm-milli.h>
+/**
+ * @file
+ *   This file includes definitions for CRC16 computations.
+ */
 
-#include "nexus_alarm.hpp"
-#include "nexus_core.hpp"
-#include "nexus_node.hpp"
+#ifndef CRC16_HPP_
+#define CRC16_HPP_
+
+#include "openthread-core-config.h"
+
+#include <stdint.h>
 
 namespace ot {
-namespace Nexus {
 
-//---------------------------------------------------------------------------------------------------------------------
-// otPlatAlarmMilli APIs
-
-extern "C" {
-
-uint32_t otPlatAlarmMilliGetNow(void) { return Core::Get().GetNow().GetValue(); }
-
-void otPlatAlarmMilliStartAt(otInstance *aInstance, uint32_t aT0, uint32_t aDt)
+/**
+ * Implements CRC16 computations.
+ *
+ */
+class Crc16
 {
-    Alarm &alarm = AsNode(aInstance).mAlarm;
+public:
+    enum Polynomial : uint16_t
+    {
+        kCcitt = 0x1021, ///< CRC16_CCITT
+        kAnsi  = 0x8005, ///< CRC16-ANSI
+    };
 
-    alarm.mScheduled = true;
-    alarm.mAlarmTime.SetValue(aT0 + aDt);
+    /**
+     * Initializes the object.
+     *
+     * @param[in]  aPolynomial  The polynomial value.
+     *
+     */
+    explicit Crc16(Polynomial aPolynomial);
 
-    Core::Get().UpdateNextAlarmTime(alarm);
-}
+    /**
+     * Initializes the CRC16 computation.
+     *
+     */
+    void Init(void) { mCrc = 0; }
 
-void otPlatAlarmMilliStop(otInstance *aInstance) { AsNode(aInstance).mAlarm.mScheduled = false; }
+    /*c*
+     * Feeds a byte value into the CRC16 computation.
+     *
+     * @param[in]  aByte  The byte value.
+     *
+     */
+    void Update(uint8_t aByte);
 
-} // extern "C"
+    /**
+     * Gets the current CRC16 value.
+     *
+     * @returns The current CRC16 value.
+     *
+     */
+    uint16_t Get(void) const { return mCrc; }
 
-} // namespace Nexus
+private:
+    uint16_t mPolynomial;
+    uint16_t mCrc;
+};
+
 } // namespace ot
+
+#endif // CRC16_HPP_

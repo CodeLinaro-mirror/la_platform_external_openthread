@@ -98,6 +98,7 @@ void TestIphcVector::GetUncompressedStream(Message &aMessage)
 
 /**
  * Initializes Thread Interface.
+ *
  */
 static void Init(void)
 {

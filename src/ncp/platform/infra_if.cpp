@@ -30,10 +30,13 @@
 
 #include "ncp/ncp_base.hpp"
 
-#if OPENTHREAD_FTD && OPENTHREAD_CONFIG_NCP_INFRA_IF_ENABLE && OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+#if OPENTHREAD_CONFIG_NCP_INFRA_IF_ENABLE
 bool otPlatInfraIfHasAddress(uint32_t aInfraIfIndex, const otIp6Address *aAddress)
 {
-    return ot::Ncp::NcpBase::GetNcpInstance()->InfraIfHasAddress(aInfraIfIndex, aAddress);
+    OT_UNUSED_VARIABLE(aInfraIfIndex);
+    OT_UNUSED_VARIABLE(aAddress);
+
+    return true;
 }
 
 otError otPlatInfraIfSendIcmp6Nd(uint32_t            aInfraIfIndex,
@@ -41,9 +44,12 @@ otError otPlatInfraIfSendIcmp6Nd(uint32_t            aInfraIfIndex,
                                  const uint8_t      *aBuffer,
                                  uint16_t            aBufferLength)
 {
-    ot::Ncp::NcpBase *ncp = ot::Ncp::NcpBase::GetNcpInstance();
+    OT_UNUSED_VARIABLE(aInfraIfIndex);
+    OT_UNUSED_VARIABLE(aDestAddress);
+    OT_UNUSED_VARIABLE(aBuffer);
+    OT_UNUSED_VARIABLE(aBufferLength);
 
-    return ncp->InfraIfSendIcmp6Nd(aInfraIfIndex, aDestAddress, aBuffer, aBufferLength);
+    return OT_ERROR_NOT_IMPLEMENTED;
 }
 
 otError otPlatInfraIfDiscoverNat64Prefix(uint32_t aInfraIfIndex)
@@ -53,4 +59,4 @@ otError otPlatInfraIfDiscoverNat64Prefix(uint32_t aInfraIfIndex)
     return OT_ERROR_NOT_IMPLEMENTED;
 }
 
-#endif // OPENTHREAD_FTD && OPENTHREAD_CONFIG_NCP_INFRA_IF_ENABLE && OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+#endif // OPENTHREAD_CONFIG_NCP_INFRA_IF_ENABLE

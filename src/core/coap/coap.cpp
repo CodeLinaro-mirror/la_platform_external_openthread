@@ -28,7 +28,18 @@
 
 #include "coap.hpp"
 
+#include "common/array.hpp"
+#include "common/as_core_type.hpp"
+#include "common/code_utils.hpp"
+#include "common/debug.hpp"
+#include "common/locator_getters.hpp"
+#include "common/log.hpp"
+#include "common/random.hpp"
+#include "common/string.hpp"
 #include "instance/instance.hpp"
+#include "net/ip6.hpp"
+#include "net/udp6.hpp"
+#include "thread/thread_netif.hpp"
 
 /**
  * @file
@@ -53,11 +64,10 @@ CoapBase::CoapBase(Instance &aInstance, Sender aSender)
 {
 }
 
-void CoapBase::ClearAllRequestsAndResponses(void)
+void CoapBase::ClearRequestsAndResponses(void)
 {
     ClearRequests(nullptr); // Clear requests matching any address.
     mResponsesQueue.DequeueAllResponses();
-    mRetransmissionTimer.Stop();
 }
 
 void CoapBase::ClearRequests(const Ip6::Address &aAddress) { ClearRequests(&aAddress); }
@@ -110,7 +120,7 @@ Message *CoapBase::NewMessage(void) { return NewMessage(Message::Settings::GetDe
 
 Message *CoapBase::NewPriorityMessage(void)
 {
-    return NewMessage(Message::Settings(kWithLinkSecurity, Message::kPriorityNet));
+    return NewMessage(Message::Settings(Message::kWithLinkSecurity, Message::kPriorityNet));
 }
 
 Message *CoapBase::NewPriorityConfirmablePostMessage(Uri aUri)
@@ -1450,6 +1460,19 @@ exit:
     }
 }
 
+void CoapBase::Metadata::ReadFrom(const Message &aMessage)
+{
+    uint16_t length = aMessage.GetLength();
+
+    OT_ASSERT(length >= sizeof(*this));
+    IgnoreError(aMessage.Read(length - sizeof(*this), *this));
+}
+
+void CoapBase::Metadata::UpdateIn(Message &aMessage) const
+{
+    aMessage.Write(aMessage.GetLength() - sizeof(*this), *this);
+}
+
 ResponsesQueue::ResponsesQueue(Instance &aInstance)
     : mTimer(aInstance, ResponsesQueue::HandleTimer, this)
 {
@@ -1484,7 +1507,8 @@ const Message *ResponsesQueue::FindMatchedResponse(const Message &aRequest, cons
 
             metadata.ReadFrom(message);
 
-            if (metadata.mMessageInfo.HasSamePeerAddrAndPort(aMessageInfo))
+            if ((metadata.mMessageInfo.GetPeerPort() == aMessageInfo.GetPeerPort()) &&
+                (metadata.mMessageInfo.GetPeerAddr() == aMessageInfo.GetPeerAddr()))
             {
                 response = &message;
                 break;
@@ -1554,11 +1578,7 @@ void ResponsesQueue::UpdateQueue(void)
 
 void ResponsesQueue::DequeueResponse(Message &aMessage) { mQueue.DequeueAndFree(aMessage); }
 
-void ResponsesQueue::DequeueAllResponses(void)
-{
-    mQueue.DequeueAndFreeAll();
-    mTimer.Stop();
-}
+void ResponsesQueue::DequeueAllResponses(void) { mQueue.DequeueAndFreeAll(); }
 
 void ResponsesQueue::HandleTimer(Timer &aTimer)
 {
@@ -1585,6 +1605,14 @@ void ResponsesQueue::HandleTimer(void)
     }
 
     mTimer.FireAt(nextDequeueTime);
+}
+
+void ResponsesQueue::ResponseMetadata::ReadFrom(const Message &aMessage)
+{
+    uint16_t length = aMessage.GetLength();
+
+    OT_ASSERT(length >= sizeof(*this));
+    IgnoreError(aMessage.Read(length - sizeof(*this), *this));
 }
 
 /// Return product of @p aValueA and @p aValueB if no overflow otherwise 0.
@@ -1677,10 +1705,10 @@ Error Coap::Start(uint16_t aPort, Ip6::NetifIdentifier aNetifIdentifier)
 
     VerifyOrExit(!mSocket.IsBound());
 
-    SuccessOrExit(error = mSocket.Open(aNetifIdentifier));
+    SuccessOrExit(error = mSocket.Open());
     socketOpened = true;
 
-    SuccessOrExit(error = mSocket.Bind(aPort));
+    SuccessOrExit(error = mSocket.Bind(aPort, aNetifIdentifier));
 
 exit:
     if (error != kErrorNone && socketOpened)
@@ -1698,7 +1726,7 @@ Error Coap::Stop(void)
     VerifyOrExit(mSocket.IsBound());
 
     SuccessOrExit(error = mSocket.Close());
-    ClearAllRequestsAndResponses();
+    ClearRequestsAndResponses();
 
 exit:
     return error;

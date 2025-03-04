@@ -33,7 +33,12 @@
 
 #include "meshcop_tlvs.hpp"
 
-#include "instance/instance.hpp"
+#include "common/const_cast.hpp"
+#include "common/debug.hpp"
+#include "common/num_utils.hpp"
+#include "common/numeric_limits.hpp"
+#include "common/string.hpp"
+#include "meshcop/meshcop.hpp"
 
 namespace ot {
 namespace MeshCoP {

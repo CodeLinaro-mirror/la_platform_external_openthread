@@ -30,6 +30,7 @@
  * @file
  * @brief
  *   This file includes the platform abstraction for DNS-SD (e.g., mDNS) on the infrastructure network.
+ *
  */
 
 #ifndef OPENTHREAD_PLATFORM_DNSSD_H_
@@ -55,10 +56,12 @@ extern "C" {
  * @{
  *
  * The DNS-SD platform APIs are used only when `OPENTHREAD_CONFIG_PLATFORM_DNSSD_ENABLE` is enabled.
+ *
  */
 
 /**
  * Represents the state of the DNS-SD platform.
+ *
  */
 typedef enum otPlatDnssdState
 {
@@ -68,6 +71,7 @@ typedef enum otPlatDnssdState
 
 /**
  * Represents a request ID for registering/unregistering a service or host.
+ *
  */
 typedef uint32_t otPlatDnssdRequestId;
 
@@ -81,6 +85,7 @@ typedef uint32_t otPlatDnssdRequestId;
  * @param[in] aInstance     The OpenThread instance.
  * @param[in] aRequestId    The request ID.
  * @param[in] aError        Error indicating the outcome of request.
+ *
  */
 typedef void (*otPlatDnssdRegisterCallback)(otInstance *aInstance, otPlatDnssdRequestId aRequestId, otError aError);
 
@@ -88,6 +93,7 @@ typedef void (*otPlatDnssdRegisterCallback)(otInstance *aInstance, otPlatDnssdRe
  * Represents a DNS-SD service.
  *
  * See `otPlatDnssdRegisterService()`, `otPlatDnssdUnregisterService()` for more details about fields in each case.
+ *
  */
 typedef struct otPlatDnssdService
 {
@@ -109,6 +115,7 @@ typedef struct otPlatDnssdService
  * Represents a DNS-SD host.
  *
  * See `otPlatDnssdRegisterHost()`, `otPlatDnssdUnregisterHost()` for more details about fields in each case.
+ *
  */
 typedef struct otPlatDnssdHost
 {
@@ -123,6 +130,7 @@ typedef struct otPlatDnssdHost
  * Represents a DNS-SD key record.
  *
  * See `otPlatDnssdRegisterKey()`, `otPlatDnssdUnregisterKey()` for more details about fields in each case.
+ *
  */
 typedef struct otPlatDnssdKey
 {
@@ -145,6 +153,7 @@ typedef struct otPlatDnssdKey
  * resolvers are considered to be stopped, and any previously registered host, service, key entries as removed.
  *
  * @param[in] aInstance The OpenThread instance structure.
+ *
  */
 extern void otPlatDnssdStateHandleStateChange(otInstance *aInstance);
 
@@ -157,6 +166,7 @@ extern void otPlatDnssdStateHandleStateChange(otInstance *aInstance);
  * @param[in] aInstance     The OpenThread instance.
  *
  * @returns The current state of the DNS-SD module.
+ *
  */
 otPlatDnssdState otPlatDnssdGetState(otInstance *aInstance);
 
@@ -212,6 +222,7 @@ otPlatDnssdState otPlatDnssdGetState(otInstance *aInstance);
  * @param[in] aService      Information about the service to register.
  * @param[in] aRequestId    The ID associated with this request.
  * @param[in] aCallback     The callback function pointer to report the outcome (may be NULL if no callback needed).
+ *
  */
 void otPlatDnssdRegisterService(otInstance                 *aInstance,
                                 const otPlatDnssdService   *aService,
@@ -248,6 +259,7 @@ void otPlatDnssdRegisterService(otInstance                 *aInstance,
  * @param[in] aService      Information about the service to unregister.
  * @param[in] aRequestId    The ID associated with this request.
  * @param[in] aCallback     The callback function pointer to report the outcome (may be NULL if no callback needed).
+ *
  */
 void otPlatDnssdUnregisterService(otInstance                 *aInstance,
                                   const otPlatDnssdService   *aService,
@@ -288,6 +300,7 @@ void otPlatDnssdUnregisterService(otInstance                 *aInstance,
  * @param[in] aHost         Information about the host to register.
  * @param[in] aRequestId    The ID associated with this request.
  * @param[in] aCallback     The callback function pointer to report the outcome (may be NULL if no callback needed).
+ *
  */
 void otPlatDnssdRegisterHost(otInstance                 *aInstance,
                              const otPlatDnssdHost      *aHost,
@@ -325,6 +338,7 @@ void otPlatDnssdRegisterHost(otInstance                 *aInstance,
  * @param[in] aHost         Information about the host to unregister.
  * @param[in] aRequestId    The ID associated with this request.
  * @param[in] aCallback     The callback function pointer to report the outcome (may be NULL if no callback needed).
+ *
  */
 void otPlatDnssdUnregisterHost(otInstance                 *aInstance,
                                const otPlatDnssdHost      *aHost,
@@ -361,6 +375,7 @@ void otPlatDnssdUnregisterHost(otInstance                 *aInstance,
  * @param[in] aKey          Information about the key record to register.
  * @param[in] aRequestId    The ID associated with this request.
  * @param[in] aCallback     The callback function pointer to report the outcome (may be NULL if no callback needed).
+ *
  */
 void otPlatDnssdRegisterKey(otInstance                 *aInstance,
                             const otPlatDnssdKey       *aKey,
@@ -396,6 +411,7 @@ void otPlatDnssdRegisterKey(otInstance                 *aInstance,
  * @param[in] aKey          Information about the key to unregister.
  * @param[in] aRequestId    The ID associated with this request.
  * @param[in] aCallback     The callback function pointer to report the outcome (may be NULL if no callback needed).
+ *
  */
 void otPlatDnssdUnregisterKey(otInstance                 *aInstance,
                               const otPlatDnssdKey       *aKey,
@@ -406,6 +422,7 @@ void otPlatDnssdUnregisterKey(otInstance                 *aInstance,
 
 /**
  * Represents a browse result.
+ *
  */
 typedef struct otPlatDnssdBrowseResult
 {
@@ -421,11 +438,13 @@ typedef struct otPlatDnssdBrowseResult
  *
  * @param[in] aInstance    The OpenThread instance.
  * @param[in] aResult      The browse result.
+ *
  */
 typedef void (*otPlatDnssdBrowseCallback)(otInstance *aInstance, const otPlatDnssdBrowseResult *aResult);
 
 /**
  * Represents a service browser.
+ *
  */
 typedef struct otPlatDnssdBrowser
 {
@@ -437,6 +456,7 @@ typedef struct otPlatDnssdBrowser
 
 /**
  * Represents an SRV resolver result.
+ *
  */
 typedef struct otPlatDnssdSrvResult
 {
@@ -455,11 +475,13 @@ typedef struct otPlatDnssdSrvResult
  *
  * @param[in] aInstance    The OpenThread instance.
  * @param[in] aResult      The SRV resolve result.
+ *
  */
 typedef void (*otPlatDnssdSrvCallback)(otInstance *aInstance, const otPlatDnssdSrvResult *aResult);
 
 /**
  * Represents an SRV service resolver.
+ *
  */
 typedef struct otPlatDnssdSrvResolver
 {
@@ -471,6 +493,7 @@ typedef struct otPlatDnssdSrvResolver
 
 /**
  * Represents a TXT resolver result.
+ *
  */
 typedef struct otPlatDnssdTxtResult
 {
@@ -487,11 +510,13 @@ typedef struct otPlatDnssdTxtResult
  *
  * @param[in] aInstance    The OpenThread instance.
  * @param[in] aResult      The TXT resolve result.
+ *
  */
 typedef void (*otPlatDnssdTxtCallback)(otInstance *aInstance, const otPlatDnssdTxtResult *aResult);
 
 /**
  * Represents a TXT service resolver.
+ *
  */
 typedef struct otPlatDnssdTxtResolver
 {
@@ -503,6 +528,7 @@ typedef struct otPlatDnssdTxtResolver
 
 /**
  * Represents a discovered host address and its TTL.
+ *
  */
 typedef struct otPlatDnssdAddressAndTtl
 {
@@ -512,6 +538,7 @@ typedef struct otPlatDnssdAddressAndTtl
 
 /**
  * Represents address resolver result.
+ *
  */
 typedef struct otPlatDnssdAddressResult
 {
@@ -526,11 +553,13 @@ typedef struct otPlatDnssdAddressResult
  *
  * @param[in] aInstance    The OpenThread instance.
  * @param[in] aResult      The address resolve result.
+ *
  */
 typedef void (*otPlatDnssdAddressCallback)(otInstance *aInstance, const otPlatDnssdAddressResult *aResult);
 
 /**
  * Represents an address resolver.
+ *
  */
 typedef struct otPlatDnssdAddressResolver
 {
@@ -557,6 +586,7 @@ typedef struct otPlatDnssdAddressResolver
  *
  * @param[in] aInstance   The OpenThread instance.
  * @param[in] aBrowser    The browser to be started.
+ *
  */
 void otPlatDnssdStartBrowser(otInstance *aInstance, const otPlatDnssdBrowser *aBrowser);
 
@@ -570,6 +600,7 @@ void otPlatDnssdStartBrowser(otInstance *aInstance, const otPlatDnssdBrowser *aB
  *
  * @param[in] aInstance   The OpenThread instance.
  * @param[in] aBrowser    The browser to stop.
+ *
  */
 void otPlatDnssdStopBrowser(otInstance *aInstance, const otPlatDnssdBrowser *aBrowser);
 
@@ -593,6 +624,7 @@ void otPlatDnssdStopBrowser(otInstance *aInstance, const otPlatDnssdBrowser *aBr
  *
  * @param[in] aInstance    The OpenThread instance.
  * @param[in] aResolver    The resolver to be started.
+ *
  */
 void otPlatDnssdStartSrvResolver(otInstance *aInstance, const otPlatDnssdSrvResolver *aResolver);
 
@@ -606,6 +638,7 @@ void otPlatDnssdStartSrvResolver(otInstance *aInstance, const otPlatDnssdSrvReso
  *
  * @param[in] aInstance    The OpenThread instance.
  * @param[in] aResolver    The resolver to stop.
+ *
  */
 void otPlatDnssdStopSrvResolver(otInstance *aInstance, const otPlatDnssdSrvResolver *aResolver);
 
@@ -629,6 +662,7 @@ void otPlatDnssdStopSrvResolver(otInstance *aInstance, const otPlatDnssdSrvResol
  *
  * @param[in] aInstance    The OpenThread instance.
  * @param[in] aResolver    The resolver to be started.
+ *
  */
 void otPlatDnssdStartTxtResolver(otInstance *aInstance, const otPlatDnssdTxtResolver *aResolver);
 
@@ -642,6 +676,7 @@ void otPlatDnssdStartTxtResolver(otInstance *aInstance, const otPlatDnssdTxtReso
  *
  * @param[in] aInstance    The OpenThread instance.
  * @param[in] aResolver    The resolver to stop.
+ *
  */
 void otPlatDnssdStopTxtResolver(otInstance *aInstance, const otPlatDnssdTxtResolver *aResolver);
 
@@ -665,6 +700,7 @@ void otPlatDnssdStopTxtResolver(otInstance *aInstance, const otPlatDnssdTxtResol
  *
  * @param[in] aInstance    The OpenThread instance.
  * @param[in] aResolver    The resolver to be started.
+ *
  */
 void otPlatDnssdStartIp6AddressResolver(otInstance *aInstance, const otPlatDnssdAddressResolver *aResolver);
 
@@ -678,6 +714,7 @@ void otPlatDnssdStartIp6AddressResolver(otInstance *aInstance, const otPlatDnssd
  *
  * @param[in] aInstance    The OpenThread instance.
  * @param[in] aResolver    The resolver to stop.
+ *
  */
 void otPlatDnssdStopIp6AddressResolver(otInstance *aInstance, const otPlatDnssdAddressResolver *aResolver);
 
@@ -702,6 +739,7 @@ void otPlatDnssdStopIp6AddressResolver(otInstance *aInstance, const otPlatDnssdA
  *
  * @param[in] aInstance    The OpenThread instance.
  * @param[in] aResolver    The resolver to be started.
+ *
  */
 void otPlatDnssdStartIp4AddressResolver(otInstance *aInstance, const otPlatDnssdAddressResolver *aResolver);
 
@@ -715,11 +753,13 @@ void otPlatDnssdStartIp4AddressResolver(otInstance *aInstance, const otPlatDnssd
  *
  * @param[in] aInstance    The OpenThread instance.
  * @param[in] aResolver    The resolver to stop.
+ *
  */
 void otPlatDnssdStopIp4AddressResolver(otInstance *aInstance, const otPlatDnssdAddressResolver *aResolver);
 
 /**
  * @}
+ *
  */
 
 #ifdef __cplusplus

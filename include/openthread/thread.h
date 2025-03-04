@@ -50,6 +50,7 @@ extern "C" {
  *   The functions in this module require `OPENTHREAD_FTD=1` or `OPENTHREAD_MTD=1`.
  *
  * @{
+ *
  */
 
 #define OT_THREAD_VERSION_INVALID 0 ///< Invalid Thread version
@@ -68,6 +69,7 @@ extern "C" {
 
 /**
  * Represents a Thread device role.
+ *
  */
 typedef enum
 {
@@ -90,6 +92,7 @@ typedef struct otLinkModeConfig
 
 /**
  * Holds diagnostic information for a neighboring Thread node
+ *
  */
 typedef struct
 {
@@ -118,6 +121,7 @@ typedef int16_t otNeighborInfoIterator; ///< Used to iterate through neighbor ta
 
 /**
  * Represents the Thread Leader Data.
+ *
  */
 typedef struct otLeaderData
 {
@@ -130,6 +134,7 @@ typedef struct otLeaderData
 
 /**
  * Holds diagnostic information for a Thread Router
+ *
  */
 typedef struct
 {
@@ -147,6 +152,7 @@ typedef struct
 
     /**
      * Parent CSL parameters are only relevant when OPENTHREAD_CONFIG_MAC_CSL_RECEIVER_ENABLE is enabled.
+     *
      */
     uint8_t mCslClockAccuracy; ///< CSL clock accuracy, in ± ppm
     uint8_t mCslUncertainty;   ///< CSL uncertainty, in ±10 us
@@ -154,6 +160,7 @@ typedef struct
 
 /**
  * Represents the IP level counters.
+ *
  */
 typedef struct otIpCounters
 {
@@ -165,6 +172,7 @@ typedef struct otIpCounters
 
 /**
  * Represents the Thread MLE counters.
+ *
  */
 typedef struct otMleCounters
 {
@@ -176,12 +184,12 @@ typedef struct otMleCounters
     uint16_t mAttachAttempts;                ///< Number of attach attempts while device was detached.
     uint16_t mPartitionIdChanges;            ///< Number of changes to partition ID.
     uint16_t mBetterPartitionAttachAttempts; ///< Number of attempts to attach to a better partition.
-    uint16_t mBetterParentAttachAttempts;    ///< Number of attempts to attach to find a better parent (parent search).
 
     /**
      * Role time tracking.
      *
      * When uptime feature is enabled (OPENTHREAD_CONFIG_UPTIME_ENABLE = 1) time spent in each MLE role is tracked.
+     *
      */
     uint64_t mDisabledTime; ///< Number of milliseconds device has been in OT_DEVICE_ROLE_DISABLED role.
     uint64_t mDetachedTime; ///< Number of milliseconds device has been in OT_DEVICE_ROLE_DETACHED role.
@@ -196,12 +204,14 @@ typedef struct otMleCounters
      * A parent change can happen if device detaches from its current parent and attaches to a different one, or even
      * while device is attached when the periodic parent search feature is enabled  (please see option
      * OPENTHREAD_CONFIG_PARENT_SEARCH_ENABLE).
+     *
      */
     uint16_t mParentChanges;
 } otMleCounters;
 
 /**
  * Represents the MLE Parent Response data.
+ *
  */
 typedef struct otThreadParentResponseInfo
 {
@@ -219,18 +229,9 @@ typedef struct otThreadParentResponseInfo
  * This callback informs the application that the detaching process has finished.
  *
  * @param[in] aContext A pointer to application-specific context.
+ *
  */
 typedef void (*otDetachGracefullyCallback)(void *aContext);
-
-/**
- * Informs the application about the result of waking a Wake-up End Device.
- *
- * @param[in] aError   OT_ERROR_NONE    Indicates that the Wake-up End Device has been added as a neighbor.
- *                     OT_ERROR_FAILED  Indicates that the Wake-up End Device has not received a wake-up frame, or it
- *                                      has failed the MLE procedure.
- * @param[in] aContext A pointer to application-specific context.
- */
-typedef void (*otWakeupCallback)(otError aError, void *aContext);
 
 /**
  * Starts Thread protocol operation.
@@ -245,6 +246,7 @@ typedef void (*otWakeupCallback)(otError aError, void *aContext);
  *
  * @retval OT_ERROR_NONE           Successfully started Thread protocol operation.
  * @retval OT_ERROR_INVALID_STATE  The network interface was not up.
+ *
  */
 otError otThreadSetEnabled(otInstance *aInstance, bool aEnabled);
 
@@ -254,6 +256,7 @@ otError otThreadSetEnabled(otInstance *aInstance, bool aEnabled);
  * The constants `OT_THREAD_VERSION_*` define the numerical version values.
  *
  * @returns the Thread protocol version.
+ *
  */
 uint16_t otThreadGetVersion(void);
 
@@ -264,6 +267,7 @@ uint16_t otThreadGetVersion(void);
  *
  * @retval TRUE   It is the only router in the network.
  * @retval FALSE  It is a child or is not a single router in the network.
+ *
  */
 bool otThreadIsSingleton(otInstance *aInstance);
 
@@ -285,6 +289,7 @@ bool otThreadIsSingleton(otInstance *aInstance);
  * @retval OT_ERROR_INVALID_STATE  The IPv6 interface is not enabled (netif is not up).
  * @retval OT_ERROR_NO_BUFS        Could not allocate message for Discovery Request.
  * @retval OT_ERROR_BUSY           Thread Discovery Scan is already in progress.
+ *
  */
 otError otThreadDiscover(otInstance              *aInstance,
                          uint32_t                 aScanChannels,
@@ -298,6 +303,7 @@ otError otThreadDiscover(otInstance              *aInstance,
  * Determines if an MLE Thread Discovery is currently in progress.
  *
  * @param[in] aInstance A pointer to an OpenThread instance.
+ *
  */
 bool otThreadIsDiscoverInProgress(otInstance *aInstance);
 
@@ -316,6 +322,7 @@ bool otThreadIsDiscoverInProgress(otInstance *aInstance);
  *
  * @retval OT_ERROR_NONE         Successfully set Joiner Advertisement.
  * @retval OT_ERROR_INVALID_ARGS Invalid AdvData.
+ *
  */
 otError otThreadSetJoinerAdvertisement(otInstance    *aInstance,
                                        uint32_t       aOui,
@@ -332,6 +339,7 @@ otError otThreadSetJoinerAdvertisement(otInstance    *aInstance,
  * @returns The Thread Child Timeout value in seconds.
  *
  * @sa otThreadSetChildTimeout
+ *
  */
 uint32_t otThreadGetChildTimeout(otInstance *aInstance);
 
@@ -342,6 +350,7 @@ uint32_t otThreadGetChildTimeout(otInstance *aInstance);
  * @param[in]  aTimeout  The timeout value in seconds.
  *
  * @sa otThreadGetChildTimeout
+ *
  */
 void otThreadSetChildTimeout(otInstance *aInstance, uint32_t aTimeout);
 
@@ -353,6 +362,7 @@ void otThreadSetChildTimeout(otInstance *aInstance, uint32_t aTimeout);
  * @returns A pointer to the IEEE 802.15.4 Extended PAN ID.
  *
  * @sa otThreadSetExtendedPanId
+ *
  */
 const otExtendedPanId *otThreadGetExtendedPanId(otInstance *aInstance);
 
@@ -370,6 +380,7 @@ const otExtendedPanId *otThreadGetExtendedPanId(otInstance *aInstance);
  * @retval OT_ERROR_INVALID_STATE  Thread protocols are enabled.
  *
  * @sa otThreadGetExtendedPanId
+ *
  */
 otError otThreadSetExtendedPanId(otInstance *aInstance, const otExtendedPanId *aExtendedPanId);
 
@@ -382,6 +393,7 @@ otError otThreadSetExtendedPanId(otInstance *aInstance, const otExtendedPanId *a
  * @retval OT_ERROR_NONE          The Leader's RLOC was successfully written to @p aLeaderRloc.
  * @retval OT_ERROR_INVALID_ARGS  @p aLeaderRloc was NULL.
  * @retval OT_ERROR_DETACHED      Not currently attached to a Thread Partition.
+ *
  */
 otError otThreadGetLeaderRloc(otInstance *aInstance, otIp6Address *aLeaderRloc);
 
@@ -393,6 +405,7 @@ otError otThreadGetLeaderRloc(otInstance *aInstance, otIp6Address *aLeaderRloc);
  * @returns The MLE Link Mode configuration.
  *
  * @sa otThreadSetLinkMode
+ *
  */
 otLinkModeConfig otThreadGetLinkMode(otInstance *aInstance);
 
@@ -405,6 +418,7 @@ otLinkModeConfig otThreadGetLinkMode(otInstance *aInstance);
  * @retval OT_ERROR_NONE  Successfully set the MLE Link Mode configuration.
  *
  * @sa otThreadGetLinkMode
+ *
  */
 otError otThreadSetLinkMode(otInstance *aInstance, otLinkModeConfig aConfig);
 
@@ -415,6 +429,7 @@ otError otThreadSetLinkMode(otInstance *aInstance, otLinkModeConfig aConfig);
  * @param[out]  aNetworkKey   A pointer to an `otNetworkKey` to return the Thread Network Key.
  *
  * @sa otThreadSetNetworkKey
+ *
  */
 void otThreadGetNetworkKey(otInstance *aInstance, otNetworkKey *aNetworkKey);
 
@@ -428,6 +443,7 @@ void otThreadGetNetworkKey(otInstance *aInstance, otNetworkKey *aNetworkKey);
  * @returns Reference to the Thread Network Key stored in memory.
  *
  * @sa otThreadSetNetworkKeyRef
+ *
  */
 otNetworkKeyRef otThreadGetNetworkKeyRef(otInstance *aInstance);
 
@@ -445,6 +461,7 @@ otNetworkKeyRef otThreadGetNetworkKeyRef(otInstance *aInstance);
  * @retval OT_ERROR_INVALID_STATE   Thread protocols are enabled.
  *
  * @sa otThreadGetNetworkKey
+ *
  */
 otError otThreadSetNetworkKey(otInstance *aInstance, const otNetworkKey *aKey);
 
@@ -464,6 +481,7 @@ otError otThreadSetNetworkKey(otInstance *aInstance, const otNetworkKey *aKey);
  * @retval OT_ERROR_INVALID_STATE   Thread protocols are enabled.
  *
  * @sa otThreadGetNetworkKeyRef
+ *
  */
 otError otThreadSetNetworkKeyRef(otInstance *aInstance, otNetworkKeyRef aKeyRef);
 
@@ -473,6 +491,7 @@ otError otThreadSetNetworkKeyRef(otInstance *aInstance, otNetworkKeyRef aKeyRef)
  * @param[in]  aInstance A pointer to an OpenThread instance.
  *
  * @returns A pointer to the Thread Routing Locator (RLOC) address.
+ *
  */
 const otIp6Address *otThreadGetRloc(otInstance *aInstance);
 
@@ -482,6 +501,7 @@ const otIp6Address *otThreadGetRloc(otInstance *aInstance);
  * @param[in]  aInstance A pointer to an OpenThread instance.
  *
  * @returns A pointer to the Mesh Local EID address.
+ *
  */
 const otIp6Address *otThreadGetMeshLocalEid(otInstance *aInstance);
 
@@ -491,6 +511,7 @@ const otIp6Address *otThreadGetMeshLocalEid(otInstance *aInstance);
  * @param[in]  aInstance A pointer to an OpenThread instance.
  *
  * @returns A pointer to the Mesh Local Prefix.
+ *
  */
 const otMeshLocalPrefix *otThreadGetMeshLocalPrefix(otInstance *aInstance);
 
@@ -506,6 +527,7 @@ const otMeshLocalPrefix *otThreadGetMeshLocalPrefix(otInstance *aInstance);
  *
  * @retval OT_ERROR_NONE           Successfully set the Mesh Local Prefix.
  * @retval OT_ERROR_INVALID_STATE  Thread protocols are enabled.
+ *
  */
 otError otThreadSetMeshLocalPrefix(otInstance *aInstance, const otMeshLocalPrefix *aMeshLocalPrefix);
 
@@ -517,6 +539,7 @@ otError otThreadSetMeshLocalPrefix(otInstance *aInstance, const otMeshLocalPrefi
  * @param[in]  aInstance A pointer to an OpenThread instance.
  *
  * @returns A pointer to Thread link-local IPv6 address.
+ *
  */
 const otIp6Address *otThreadGetLinkLocalIp6Address(otInstance *aInstance);
 
@@ -533,6 +556,7 @@ const otIp6Address *otThreadGetLinkLocalIp6Address(otInstance *aInstance);
  * @param[in]  aInstance A pointer to an OpenThread instance.
  *
  * @returns A pointer to Thread Link-Local All Thread Nodes multicast address.
+ *
  */
 const otIp6Address *otThreadGetLinkLocalAllThreadNodesMulticastAddress(otInstance *aInstance);
 
@@ -549,6 +573,7 @@ const otIp6Address *otThreadGetLinkLocalAllThreadNodesMulticastAddress(otInstanc
  * @param[in]  aInstance A pointer to an OpenThread instance.
  *
  * @returns A pointer to Thread Realm-Local All Thread Nodes multicast address.
+ *
  */
 const otIp6Address *otThreadGetRealmLocalAllThreadNodesMulticastAddress(otInstance *aInstance);
 
@@ -572,6 +597,7 @@ otError otThreadGetServiceAloc(otInstance *aInstance, uint8_t aServiceId, otIp6A
  * @returns A pointer to the Thread Network Name.
  *
  * @sa otThreadSetNetworkName
+ *
  */
 const char *otThreadGetNetworkName(otInstance *aInstance);
 
@@ -589,6 +615,7 @@ const char *otThreadGetNetworkName(otInstance *aInstance);
  * @retval OT_ERROR_INVALID_STATE  Thread protocols are enabled.
  *
  * @sa otThreadGetNetworkName
+ *
  */
 otError otThreadSetNetworkName(otInstance *aInstance, const char *aNetworkName);
 
@@ -602,6 +629,7 @@ otError otThreadSetNetworkName(otInstance *aInstance, const char *aNetworkName);
  * @returns A pointer to the Thread Domain Name.
  *
  * @sa otThreadSetDomainName
+ *
  */
 const char *otThreadGetDomainName(otInstance *aInstance);
 
@@ -617,6 +645,7 @@ const char *otThreadGetDomainName(otInstance *aInstance);
  * @retval OT_ERROR_INVALID_STATE  Thread protocols are enabled.
  *
  * @sa otThreadGetDomainName
+ *
  */
 otError otThreadSetDomainName(otInstance *aInstance, const char *aDomainName);
 
@@ -649,6 +678,7 @@ otError otThreadSetFixedDuaInterfaceIdentifier(otInstance *aInstance, const otIp
  * @returns A pointer to the Interface Identifier which was set manually, or NULL if none was set.
  *
  * @sa otThreadSetFixedDuaInterfaceIdentifier
+ *
  */
 const otIp6InterfaceIdentifier *otThreadGetFixedDuaInterfaceIdentifier(otInstance *aInstance);
 
@@ -660,6 +690,7 @@ const otIp6InterfaceIdentifier *otThreadGetFixedDuaInterfaceIdentifier(otInstanc
  * @returns The thrKeySequenceCounter value.
  *
  * @sa otThreadSetKeySequenceCounter
+ *
  */
 uint32_t otThreadGetKeySequenceCounter(otInstance *aInstance);
 
@@ -673,6 +704,7 @@ uint32_t otThreadGetKeySequenceCounter(otInstance *aInstance);
  * @param[in]  aKeySequenceCounter  The thrKeySequenceCounter value.
  *
  * @sa otThreadGetKeySequenceCounter
+ *
  */
 void otThreadSetKeySequenceCounter(otInstance *aInstance, uint32_t aKeySequenceCounter);
 
@@ -684,6 +716,7 @@ void otThreadSetKeySequenceCounter(otInstance *aInstance, uint32_t aKeySequenceC
  * @returns The thrKeySwitchGuardTime value (in hours).
  *
  * @sa otThreadSetKeySwitchGuardTime
+ *
  */
 uint16_t otThreadGetKeySwitchGuardTime(otInstance *aInstance);
 
@@ -697,6 +730,7 @@ uint16_t otThreadGetKeySwitchGuardTime(otInstance *aInstance);
  * @param[in]  aKeySwitchGuardTime  The thrKeySwitchGuardTime value (in hours).
  *
  * @sa otThreadGetKeySwitchGuardTime
+ *
  */
 void otThreadSetKeySwitchGuardTime(otInstance *aInstance, uint16_t aKeySwitchGuardTime);
 
@@ -707,6 +741,7 @@ void otThreadSetKeySwitchGuardTime(otInstance *aInstance, uint16_t aKeySwitchGua
  *
  * @retval OT_ERROR_NONE           Successfully detached from the Thread network.
  * @retval OT_ERROR_INVALID_STATE  Thread is disabled.
+ *
  */
 otError otThreadBecomeDetached(otInstance *aInstance);
 
@@ -720,6 +755,7 @@ otError otThreadBecomeDetached(otInstance *aInstance);
  *
  * @retval OT_ERROR_NONE           Successfully begin attempt to become a child.
  * @retval OT_ERROR_INVALID_STATE  Thread is disabled.
+ *
  */
 otError otThreadBecomeChild(otInstance *aInstance);
 
@@ -735,6 +771,7 @@ otError otThreadBecomeChild(otInstance *aInstance);
  * @retval OT_ERROR_NONE         Successfully found the next neighbor entry in table.
  * @retval OT_ERROR_NOT_FOUND     No subsequent neighbor entry exists in the table.
  * @retval OT_ERROR_INVALID_ARGS  @p aIterator or @p aInfo was NULL.
+ *
  */
 otError otThreadGetNextNeighborInfo(otInstance *aInstance, otNeighborInfoIterator *aIterator, otNeighborInfo *aInfo);
 
@@ -748,6 +785,7 @@ otError otThreadGetNextNeighborInfo(otInstance *aInstance, otNeighborInfoIterato
  * @retval OT_DEVICE_ROLE_CHILD     The device is currently operating as a Thread Child.
  * @retval OT_DEVICE_ROLE_ROUTER    The device is currently operating as a Thread Router.
  * @retval OT_DEVICE_ROLE_LEADER    The device is currently operating as a Thread Leader.
+ *
  */
 otDeviceRole otThreadGetDeviceRole(otInstance *aInstance);
 
@@ -757,6 +795,7 @@ otDeviceRole otThreadGetDeviceRole(otInstance *aInstance);
  * @param[in] aRole   The device role to convert.
  *
  * @returns A string representing @p aRole.
+ *
  */
 const char *otThreadDeviceRoleToString(otDeviceRole aRole);
 
@@ -768,6 +807,7 @@ const char *otThreadDeviceRoleToString(otDeviceRole aRole);
  *
  * @retval OT_ERROR_NONE          Successfully retrieved the leader data.
  * @retval OT_ERROR_DETACHED      Not currently attached.
+ *
  */
 otError otThreadGetLeaderData(otInstance *aInstance, otLeaderData *aLeaderData);
 
@@ -777,6 +817,7 @@ otError otThreadGetLeaderData(otInstance *aInstance, otLeaderData *aLeaderData);
  * @param[in]  aInstance A pointer to an OpenThread instance.
  *
  * @returns The Leader's Router ID.
+ *
  */
 uint8_t otThreadGetLeaderRouterId(otInstance *aInstance);
 
@@ -786,6 +827,7 @@ uint8_t otThreadGetLeaderRouterId(otInstance *aInstance);
  * @param[in]  aInstance A pointer to an OpenThread instance.
  *
  * @returns The Leader's Weight.
+ *
  */
 uint8_t otThreadGetLeaderWeight(otInstance *aInstance);
 
@@ -795,6 +837,7 @@ uint8_t otThreadGetLeaderWeight(otInstance *aInstance);
  * @param[in]  aInstance A pointer to an OpenThread instance.
  *
  * @returns The Partition ID.
+ *
  */
 uint32_t otThreadGetPartitionId(otInstance *aInstance);
 
@@ -804,6 +847,7 @@ uint32_t otThreadGetPartitionId(otInstance *aInstance);
  * @param[in]  aInstance A pointer to an OpenThread instance.
  *
  * @returns The RLOC16.
+ *
  */
 uint16_t otThreadGetRloc16(otInstance *aInstance);
 
@@ -812,6 +856,7 @@ uint16_t otThreadGetRloc16(otInstance *aInstance);
  *
  * @param[in]   aInstance    A pointer to an OpenThread instance.
  * @param[out]  aParentInfo  A pointer to where the parent router information is placed.
+ *
  */
 otError otThreadGetParentInfo(otInstance *aInstance, otRouterInfo *aParentInfo);
 
@@ -820,6 +865,7 @@ otError otThreadGetParentInfo(otInstance *aInstance, otRouterInfo *aParentInfo);
  *
  * @param[in]   aInstance    A pointer to an OpenThread instance.
  * @param[out]  aParentRssi  A pointer to where the parent RSSI should be placed.
+ *
  */
 otError otThreadGetParentAverageRssi(otInstance *aInstance, int8_t *aParentRssi);
 
@@ -832,6 +878,7 @@ otError otThreadGetParentAverageRssi(otInstance *aInstance, int8_t *aParentRssi)
  * @retval OT_ERROR_NONE          Successfully retrieved the RSSI data.
  * @retval OT_ERROR_FAILED        Unable to get RSSI data.
  * @retval OT_ERROR_INVALID_ARGS  @p aLastRssi is NULL.
+ *
  */
 otError otThreadGetParentLastRssi(otInstance *aInstance, int8_t *aLastRssi);
 
@@ -842,6 +889,7 @@ otError otThreadGetParentLastRssi(otInstance *aInstance, int8_t *aLastRssi);
  *
  * @retval OT_ERROR_NONE           Successfully started the process to search for a better parent.
  * @retval OT_ERROR_INVALID_STATE  Device role is not child.
+ *
  */
 otError otThreadSearchForBetterParent(otInstance *aInstance);
 
@@ -851,6 +899,7 @@ otError otThreadSearchForBetterParent(otInstance *aInstance);
  * @param[in]  aInstance  A pointer to an OpenThread instance.
  *
  * @returns A pointer to the IPv6 counters.
+ *
  */
 const otIpCounters *otThreadGetIp6Counters(otInstance *aInstance);
 
@@ -858,6 +907,7 @@ const otIpCounters *otThreadGetIp6Counters(otInstance *aInstance);
  * Resets the IPv6 counters.
  *
  * @param[in]  aInstance  A pointer to an OpenThread instance.
+ *
  */
 void otThreadResetIp6Counters(otInstance *aInstance);
 
@@ -887,6 +937,7 @@ void otThreadResetIp6Counters(otInstance *aInstance);
  * @param[out] aBinInterval   Pointer to return the histogram bin interval length in milliseconds.
  *
  * @returns A pointer to an array of @p aNumBins entries representing the collected histogram info.
+ *
  */
 const uint32_t *otThreadGetTimeInQueueHistogram(otInstance *aInstance, uint16_t *aNumBins, uint32_t *aBinInterval);
 
@@ -903,6 +954,7 @@ const uint32_t *otThreadGetTimeInQueueHistogram(otInstance *aInstance, uint16_t 
  * @param[in]  aInstance      A pointer to an OpenThread instance.
  *
  * @returns The maximum time-in-queue in milliseconds for all messages in the TX queue (so far).
+ *
  */
 uint32_t otThreadGetMaxTimeInQueue(otInstance *aInstance);
 
@@ -912,6 +964,7 @@ uint32_t otThreadGetMaxTimeInQueue(otInstance *aInstance);
  * Requires `OPENTHREAD_CONFIG_TX_QUEUE_STATISTICS_ENABLE`.
  *
  * @param[in]  aInstance      A pointer to an OpenThread instance.
+ *
  */
 void otThreadResetTimeInQueueStat(otInstance *aInstance);
 
@@ -921,6 +974,7 @@ void otThreadResetTimeInQueueStat(otInstance *aInstance);
  * @param[in]  aInstance  A pointer to an OpenThread instance.
  *
  * @returns A pointer to the Thread MLE counters.
+ *
  */
 const otMleCounters *otThreadGetMleCounters(otInstance *aInstance);
 
@@ -928,25 +982,9 @@ const otMleCounters *otThreadGetMleCounters(otInstance *aInstance);
  * Resets the Thread MLE counters.
  *
  * @param[in]  aInstance  A pointer to an OpenThread instance.
+ *
  */
 void otThreadResetMleCounters(otInstance *aInstance);
-
-/**
- * Gets the current attach duration (number of seconds since the device last attached).
- *
- * Requires the `OPENTHREAD_CONFIG_UPTIME_ENABLE` feature.
- *
- * If the device is not currently attached, zero will be returned.
- *
- * Unlike the role-tracking variables in `otMleCounters`, which track the cumulative time the device is in each role,
- * this function tracks the time since the last successful attachment, indicating how long the device has been
- * connected to the Thread mesh (regardless of its role, whether acting as a child, router, or leader).
- *
- * @param[in] aInstance  A pointer to an OpenThread instance.
- *
- * @returns The number of seconds since last attached.
- */
-uint32_t otThreadGetCurrentAttachDuration(otInstance *aInstance);
 
 /**
  * Pointer is called every time an MLE Parent Response message is received.
@@ -955,6 +993,7 @@ uint32_t otThreadGetCurrentAttachDuration(otInstance *aInstance);
  *
  * @param[in]  aInfo     A pointer to a location on stack holding the stats data.
  * @param[in]  aContext  A pointer to callback client-specific context.
+ *
  */
 typedef void (*otThreadParentResponseCallback)(otThreadParentResponseInfo *aInfo, void *aContext);
 
@@ -966,6 +1005,7 @@ typedef void (*otThreadParentResponseCallback)(otThreadParentResponseInfo *aInfo
  * @param[in]  aInstance  A pointer to an OpenThread instance.
  * @param[in]  aCallback  A pointer to a function that is called upon receiving an MLE Parent Response message.
  * @param[in]  aContext   A pointer to callback client-specific context.
+ *
  */
 void otThreadRegisterParentResponseCallback(otInstance                    *aInstance,
                                             otThreadParentResponseCallback aCallback,
@@ -973,6 +1013,7 @@ void otThreadRegisterParentResponseCallback(otInstance                    *aInst
 
 /**
  * Represents the Thread Discovery Request data.
+ *
  */
 typedef struct otThreadDiscoveryRequestInfo
 {
@@ -986,6 +1027,7 @@ typedef struct otThreadDiscoveryRequestInfo
  *
  * @param[in]  aInfo     A pointer to the Discovery Request info data.
  * @param[in]  aContext  A pointer to callback application-specific context.
+ *
  */
 typedef void (*otThreadDiscoveryRequestCallback)(const otThreadDiscoveryRequestInfo *aInfo, void *aContext);
 
@@ -995,6 +1037,7 @@ typedef void (*otThreadDiscoveryRequestCallback)(const otThreadDiscoveryRequestI
  * @param[in]  aInstance  A pointer to an OpenThread instance.
  * @param[in]  aCallback  A pointer to a function that is called upon receiving an MLE Discovery Request message.
  * @param[in]  aContext   A pointer to callback application-specific context.
+ *
  */
 void otThreadSetDiscoveryRequestCallback(otInstance                      *aInstance,
                                          otThreadDiscoveryRequestCallback aCallback,
@@ -1011,6 +1054,7 @@ void otThreadSetDiscoveryRequestCallback(otInstance                      *aInsta
  * @param[in] aMeshLocalAddress   A pointer to the mesh-local EID of the closest destination of the anycast address
  *                                when @p aError is OT_ERROR_NONE, NULL otherwise.
  * @param[in] aRloc16             The RLOC16 of the destination if found, otherwise invalid RLOC16 (0xfffe).
+ *
  */
 typedef void (*otThreadAnycastLocatorCallback)(void               *aContext,
                                                otError             aError,
@@ -1032,6 +1076,7 @@ typedef void (*otThreadAnycastLocatorCallback)(void               *aContext,
  * @retval OT_ERROR_NONE          The request started successfully. @p aCallback will be invoked to report the result.
  * @retval OT_ERROR_INVALID_ARGS  The @p aAnycastAddress is not a valid anycast address or @p aCallback is NULL.
  * @retval OT_ERROR_NO_BUFS       Out of buffer to prepare and send the request message.
+ *
  */
 otError otThreadLocateAnycastDestination(otInstance                    *aInstance,
                                          const otIp6Address            *aAnycastAddress,
@@ -1046,6 +1091,7 @@ otError otThreadLocateAnycastDestination(otInstance                    *aInstanc
  * @param[in] aInstance A pointer to an OpenThread instance.
  *
  * @returns TRUE if an anycast locate request is currently in progress, FALSE otherwise.
+ *
  */
 bool otThreadIsAnycastLocateInProgress(otInstance *aInstance);
 
@@ -1058,6 +1104,7 @@ bool otThreadIsAnycastLocateInProgress(otInstance *aInstance);
  * @param[in]  aDestination  The destination to send the ADDR_NTF.ntf message.
  * @param[in]  aTarget       The target address of the ADDR_NTF.ntf message.
  * @param[in]  aMlIid        The ML-IID of the ADDR_NTF.ntf message.
+ *
  */
 void otThreadSendAddressNotification(otInstance               *aInstance,
                                      otIp6Address             *aDestination,
@@ -1076,6 +1123,7 @@ void otThreadSendAddressNotification(otInstance               *aInstance,
  *
  * @retval OT_ERROR_NONE           Successfully sent PRO_BB.ntf on backbone link.
  * @retval OT_ERROR_NO_BUFS        If insufficient message buffers available.
+ *
  */
 otError otThreadSendProactiveBackboneNotification(otInstance               *aInstance,
                                                   otIp6Address             *aTarget,
@@ -1093,6 +1141,7 @@ otError otThreadSendProactiveBackboneNotification(otInstance               *aIns
  *
  * @retval OT_ERROR_NONE Successfully started detaching.
  * @retval OT_ERROR_BUSY Detaching is already in progress.
+ *
  */
 otError otThreadDetachGracefully(otInstance *aInstance, otDetachGracefullyCallback aCallback, void *aContext);
 
@@ -1114,66 +1163,13 @@ otError otThreadDetachGracefully(otInstance *aInstance, otDetachGracefullyCallba
  * @param[in]  aDuration A duration interval in seconds.
  * @param[out] aBuffer   A pointer to a char array to output the string.
  * @param[in]  aSize     The size of @p aBuffer (in bytes). Recommended to use `OT_DURATION_STRING_SIZE`.
+ *
  */
 void otConvertDurationInSecondsToString(uint32_t aDuration, char *aBuffer, uint16_t aSize);
 
 /**
- * Sets the store frame counter ahead.
- *
- * Requires `OPENTHREAD_CONFIG_DYNAMIC_STORE_FRAME_AHEAD_COUNTER_ENABLE` to be enabled.
- *
- * The OpenThread stack stores the MLE and MAC security frame counter values in non-volatile storage,
- * ensuring they persist across device resets. These saved values are set to be ahead of their current
- * values by the "frame counter ahead" value.
- *
- * @param[in] aInstance                  A pointer to an OpenThread instance.
- * @param[in] aStoreFrameCounterAhead    The store frame counter ahead to set.
- */
-void otThreadSetStoreFrameCounterAhead(otInstance *aInstance, uint32_t aStoreFrameCounterAhead);
-
-/**
- * Gets the store frame counter ahead.
- *
- * Requires `OPENTHREAD_CONFIG_DYNAMIC_STORE_FRAME_AHEAD_COUNTER_ENABLE` to be enabled.
- *
- * @param[in] aInstance A pointer to an OpenThread instance.
- *
- * @returns The current store frame counter ahead.
- */
-uint32_t otThreadGetStoreFrameCounterAhead(otInstance *aInstance);
-
-/**
- * Attempts to wake a Wake-up End Device.
- *
- * Requires `OPENTHREAD_CONFIG_WAKEUP_COORDINATOR_ENABLE` to be enabled.
- *
- * The wake-up starts with transmitting a wake-up frame sequence to the Wake-up End Device.
- * During the wake-up sequence, and for a short time after the last wake-up frame is sent, the Wake-up Coordinator keeps
- * its receiver on to be able to receive an initial mesh link establishment message from the WED.
- *
- * @warning The functionality implemented by this function is still in the design phase.
- *          Consequently, the prototype and semantics of this function are subject to change.
- *
- * @param[in] aInstance         A pointer to an OpenThread instance.
- * @param[in] aWedAddress       The extended address of the Wake-up End Device.
- * @param[in] aWakeupIntervalUs An interval between consecutive wake-up frames (in microseconds).
- * @param[in] aWakeupDurationMs Duration of the wake-up sequence (in milliseconds).
- * @param[in] aCallback         A pointer to function that is called when the wake-up succeeds or fails.
- * @param[in] aCallbackContext  A pointer to callback application-specific context.
- *
- * @retval OT_ERROR_NONE          Successfully started the wake-up.
- * @retval OT_ERROR_INVALID_STATE Another attachment request is still in progress.
- * @retval OT_ERROR_INVALID_ARGS  The wake-up interval or duration are invalid.
- */
-otError otThreadWakeup(otInstance         *aInstance,
-                       const otExtAddress *aWedAddress,
-                       uint16_t            aWakeupIntervalUs,
-                       uint16_t            aWakeupDurationMs,
-                       otWakeupCallback    aCallback,
-                       void               *aCallbackContext);
-
-/**
  * @}
+ *
  */
 
 #ifdef __cplusplus

@@ -48,7 +48,6 @@
 #include "common/locator.hpp"
 #include "common/non_copyable.hpp"
 #include "common/string.hpp"
-#include "mac/mac_types.hpp"
 
 namespace ot {
 namespace FactoryDiags {
@@ -60,6 +59,7 @@ public:
      * Constructor.
      *
      * @param[in]  aInstance  The OpenThread instance.
+     *
      */
     explicit Diags(Instance &aInstance);
 
@@ -67,6 +67,7 @@ public:
      * Processes a factory diagnostics command line.
      *
      * @param[in]   aString        A null-terminated input string.
+     *
      */
     Error ProcessLine(const char *aString);
 
@@ -79,6 +80,7 @@ public:
      * @retval  kErrorInvalidArgs       The command is supported but invalid arguments provided.
      * @retval  kErrorNone              The command is successfully process.
      * @retval  kErrorNotImplemented    The command is not supported.
+     *
      */
     Error ProcessCmd(uint8_t aArgsLength, char *aArgs[]);
 
@@ -87,11 +89,13 @@ public:
      *
      * @retval TRUE if factory diagnostics mode is enabled
      * @retval FALSE if factory diagnostics mode is disabled.
+     *
      */
     bool IsEnabled(void);
 
     /**
      * The platform driver calls this method to notify OpenThread diagnostics module that the alarm has fired.
+     *
      */
     void AlarmFired(void);
 
@@ -102,6 +106,7 @@ public:
      * @param[in]  aError  kErrorNone when successfully received a frame,
      *                     kErrorAbort when reception was aborted and a frame was not received,
      *                     kErrorNoBufs when a frame could not be received due to lack of rx buffer space.
+     *
      */
     void ReceiveDone(otRadioFrame *aFrame, Error aError);
 
@@ -111,6 +116,7 @@ public:
      * @param[in]  aError  kErrorNone when the frame was transmitted,
      *                     kErrorChannelAccessFailure tx could not take place due to activity on channel,
      *                     kErrorAbort when transmission was aborted for other reasons.
+     *
      */
     void TransmitDone(Error aError);
 
@@ -119,6 +125,7 @@ public:
      *
      * @param[in]  aCallback   A callback method called to output diag messages.
      * @param[in]  aContext    A user context pointer.
+     *
      */
     void SetOutputCallback(otDiagOutputCallback aCallback, void *aContext);
 
@@ -134,12 +141,7 @@ private:
     struct Stats : public Clearable<Stats>
     {
         uint32_t mReceivedPackets;
-        uint32_t mSentSuccessPackets;
-        uint32_t mSentFailedPackets;
-        uint32_t mSentErrorCcaPackets;
-        uint32_t mSentErrorAbortPackets;
-        uint32_t mSentErrorInvalidStatePackets;
-        uint32_t mSentErrorOthersPackets;
+        uint32_t mSentPackets;
         int8_t   mFirstRssi;
         uint8_t  mFirstLqi;
         int8_t   mLastRssi;
@@ -183,33 +185,6 @@ private:
         RawPowerSetting mRawPowerSetting;
     };
 
-    struct ReceiveConfig
-    {
-        ReceiveConfig(void)
-            : mIsEnabled(false)
-            , mIsAsyncCommand(false)
-            , mShowRssi(true)
-            , mShowLqi(true)
-            , mShowPsdu(false)
-            , mIsFilterEnabled(false)
-            , mReceiveCount(0)
-            , mNumFrames(0)
-            , mFilterAddress()
-        {
-        }
-
-        bool mIsEnabled : 1;
-        bool mIsAsyncCommand : 1;
-        bool mShowRssi : 1;
-        bool mShowLqi : 1;
-        bool mShowPsdu : 1;
-        bool mIsFilterEnabled : 1;
-
-        uint16_t     mReceiveCount;
-        uint16_t     mNumFrames;
-        Mac::Address mFilterAddress;
-    };
-
     Error ParseCmd(char *aString, uint8_t &aArgsLength, char *aArgs[]);
     Error ProcessChannel(uint8_t aArgsLength, char *aArgs[]);
     Error ProcessFrame(uint8_t aArgsLength, char *aArgs[]);
@@ -231,29 +206,18 @@ private:
 
     Error GetRawPowerSetting(RawPowerSetting &aRawPowerSetting);
     Error GetPowerSettings(uint8_t aChannel, PowerSettings &aPowerSettings);
-    Error ParseReceiveConfigFormat(const char *aFormat, ReceiveConfig &aConfig);
-    Error RadioReceive(void);
-    Error TransmitPacket(void);
-    void  OutputReceivedFrame(const otRadioFrame *aFrame);
-    bool  ShouldHandleReceivedFrame(const otRadioFrame &aFrame) const;
 
+    void TransmitPacket(void);
     void Output(const char *aFormat, ...);
+    void AppendErrorResult(Error aError);
     void ResetTxPacket(void);
-    void OutputStats(void);
-    void UpdateTxStats(Error aError);
 
-    static bool IsChannelValid(uint8_t aChannel);
+    static Error ParseLong(char *aString, long &aLong);
+    static Error ParseBool(char *aString, bool &aBool);
 
     static const struct Command sCommands[];
 
 #if OPENTHREAD_FTD || OPENTHREAD_MTD || (OPENTHREAD_RADIO && OPENTHREAD_RADIO_CLI)
-    enum TxCmd : uint8_t
-    {
-        kTxCmdNone,
-        kTxCmdRepeat,
-        kTxCmdSend,
-    };
-
     Stats mStats;
 
     otRadioFrame *mTxPacket;
@@ -262,16 +226,11 @@ private:
     uint8_t       mChannel;
     int8_t        mTxPower;
     uint8_t       mTxLen;
-    TxCmd         mCurTxCmd;
-    bool          mIsHeaderUpdated : 1;
-    bool          mIsSecurityProcessed : 1;
-    bool          mIsTxPacketSet : 1;
-    bool          mIsAsyncSend : 1;
-    bool          mDiagSendOn : 1;
-    bool          mIsSleepOn : 1;
+    bool          mIsTxPacketSet;
+    bool          mRepeatActive;
+    bool          mDiagSendOn;
 #endif
 
-    ReceiveConfig        mReceiveConfig;
     otDiagOutputCallback mOutputCallback;
     void                *mOutputContext;
 };

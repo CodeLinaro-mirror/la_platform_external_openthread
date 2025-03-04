@@ -35,7 +35,11 @@
 
 #if OPENTHREAD_CONFIG_COAP_API_ENABLE
 
-#include "instance/instance.hpp"
+#include <openthread/coap.h>
+
+#include "coap/coap_message.hpp"
+#include "common/as_core_type.hpp"
+#include "common/locator_getters.hpp"
 
 using namespace ot;
 

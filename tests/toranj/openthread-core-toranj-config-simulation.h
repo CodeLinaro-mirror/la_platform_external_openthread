@@ -31,6 +31,7 @@
 
 /**
  * This header file defines the OpenThread core configuration for toranj with simulation platform.
+ *
  */
 
 // Include the common configuration for all platforms.

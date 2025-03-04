@@ -31,7 +31,9 @@
 #if OPENTHREAD_CONFIG_POWER_CALIBRATION_ENABLE && OPENTHREAD_CONFIG_PLATFORM_POWER_CALIBRATION_ENABLE
 #include <openthread/platform/diag.h>
 
-#include "instance/instance.hpp"
+#include "common/as_core_type.hpp"
+#include "common/code_utils.hpp"
+#include "common/locator_getters.hpp"
 
 namespace ot {
 namespace Utils {

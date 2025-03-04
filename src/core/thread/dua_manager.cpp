@@ -35,7 +35,18 @@
 
 #if OPENTHREAD_CONFIG_DUA_ENABLE || (OPENTHREAD_FTD && OPENTHREAD_CONFIG_TMF_PROXY_DUA_ENABLE)
 
+#include "common/as_core_type.hpp"
+#include "common/code_utils.hpp"
+#include "common/locator_getters.hpp"
+#include "common/log.hpp"
+#include "common/settings.hpp"
 #include "instance/instance.hpp"
+#include "net/ip6_address.hpp"
+#include "thread/mle_types.hpp"
+#include "thread/thread_netif.hpp"
+#include "thread/thread_tlvs.hpp"
+#include "thread/uri_paths.hpp"
+#include "utils/slaac_address.hpp"
 
 namespace ot {
 
@@ -81,7 +92,7 @@ void DuaManager::HandleDomainPrefixUpdate(BackboneRouter::DomainPrefixEvent aEve
 #endif
 
 #if OPENTHREAD_FTD && OPENTHREAD_CONFIG_TMF_PROXY_DUA_ENABLE
-        if (!mChildDuaMask.IsEmpty())
+        if (mChildDuaMask.HasAny())
         {
             mChildDuaMask.Clear();
             mChildDuaRegisteredMask.Clear();
@@ -451,7 +462,7 @@ void DuaManager::PerformNextRegistration(void)
 #endif
 
 #if OPENTHREAD_FTD && OPENTHREAD_CONFIG_TMF_PROXY_DUA_ENABLE
-        needReg = needReg || (!mChildDuaMask.IsEmpty() && mChildDuaMask != mChildDuaRegisteredMask);
+        needReg = needReg || (mChildDuaMask.HasAny() && mChildDuaMask != mChildDuaRegisteredMask);
 #endif
         VerifyOrExit(needReg, error = kErrorNotFound);
     }
@@ -482,7 +493,7 @@ void DuaManager::PerformNextRegistration(void)
         {
             uint16_t childIndex = Get<ChildTable>().GetChildIndex(iter);
 
-            if (mChildDuaMask.Has(childIndex) && !mChildDuaRegisteredMask.Has(childIndex))
+            if (mChildDuaMask.Get(childIndex) && !mChildDuaRegisteredMask.Get(childIndex))
             {
                 mChildIndexDuaRegistering = childIndex;
                 break;
@@ -544,7 +555,7 @@ exit:
 void DuaManager::HandleDuaResponse(void                *aContext,
                                    otMessage           *aMessage,
                                    const otMessageInfo *aMessageInfo,
-                                   otError              aResult)
+                                   Error                aResult)
 {
     static_cast<DuaManager *>(aContext)->HandleDuaResponse(AsCoapMessagePtr(aMessage), AsCoreTypePtr(aMessageInfo),
                                                            aResult);
@@ -677,21 +688,21 @@ Error DuaManager::ProcessDuaResponse(Coap::Message &aMessage)
         {
         case ThreadStatusTlv::kDuaSuccess:
             // Mark as Registered
-            if (mChildDuaMask.Has(childIndex))
+            if (mChildDuaMask.Get(childIndex))
             {
-                mChildDuaRegisteredMask.Add(childIndex);
+                mChildDuaRegisteredMask.Set(childIndex, true);
             }
             break;
         case ThreadStatusTlv::kDuaReRegister:
             // Parent stops registering for the Child's DUA until next Child Update Request
-            mChildDuaMask.Remove(childIndex);
-            mChildDuaRegisteredMask.Remove(childIndex);
+            mChildDuaMask.Set(childIndex, false);
+            mChildDuaRegisteredMask.Set(childIndex, false);
             break;
         case ThreadStatusTlv::kDuaInvalid:
         case ThreadStatusTlv::kDuaDuplicate:
             IgnoreError(child->RemoveIp6Address(target));
-            mChildDuaMask.Remove(childIndex);
-            mChildDuaRegisteredMask.Remove(childIndex);
+            mChildDuaMask.Set(childIndex, false);
+            mChildDuaRegisteredMask.Set(childIndex, false);
             break;
         case ThreadStatusTlv::kDuaNoResources:
         case ThreadStatusTlv::kDuaNotPrimary:
@@ -750,7 +761,7 @@ void DuaManager::HandleChildDuaAddressEvent(const Child &aChild, ChildDuaAddress
 {
     uint16_t childIndex = Get<ChildTable>().GetChildIndex(aChild);
 
-    if ((aEvent == kAddressRemoved || aEvent == kAddressChanged) && mChildDuaMask.Has(childIndex))
+    if ((aEvent == kAddressRemoved || aEvent == kAddressChanged) && mChildDuaMask.Get(childIndex))
     {
         // Abort on going proxy DUA.req for this child
         if (mChildIndexDuaRegistering == childIndex)
@@ -758,20 +769,20 @@ void DuaManager::HandleChildDuaAddressEvent(const Child &aChild, ChildDuaAddress
             IgnoreError(Get<Tmf::Agent>().AbortTransaction(&DuaManager::HandleDuaResponse, this));
         }
 
-        mChildDuaMask.Remove(childIndex);
-        mChildDuaRegisteredMask.Remove(childIndex);
+        mChildDuaMask.Set(childIndex, false);
+        mChildDuaRegisteredMask.Set(childIndex, false);
     }
 
     if (aEvent == kAddressAdded || aEvent == kAddressChanged ||
-        (aEvent == kAddressUnchanged && !mChildDuaMask.Has(childIndex)))
+        (aEvent == kAddressUnchanged && !mChildDuaMask.Get(childIndex)))
     {
         if (mChildDuaMask == mChildDuaRegisteredMask)
         {
             UpdateCheckDelay(Random::NonCrypto::GetUint8InRange(1, BackboneRouter::kParentAggregateDelay));
         }
 
-        mChildDuaMask.Add(childIndex);
-        mChildDuaRegisteredMask.Remove(childIndex);
+        mChildDuaMask.Set(childIndex, true);
+        mChildDuaRegisteredMask.Set(childIndex, false);
     }
 }
 #endif // OPENTHREAD_FTD && OPENTHREAD_CONFIG_TMF_PROXY_DUA_ENABLE

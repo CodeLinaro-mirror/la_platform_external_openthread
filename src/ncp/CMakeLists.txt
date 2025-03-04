@@ -39,7 +39,6 @@ set(COMMON_SOURCES
     ncp_base_radio.cpp
     ncp_spi.cpp
     ncp_hdlc.cpp
-    platform/dnssd.cpp
     platform/infra_if.cpp
 )
 
@@ -54,13 +53,6 @@ if (OT_NCP_INFRA_IF)
     target_compile_definitions(ot-config INTERFACE "OPENTHREAD_CONFIG_NCP_INFRA_IF_ENABLE=1")
 else()
     target_compile_definitions(ot-config INTERFACE "OPENTHREAD_CONFIG_NCP_INFRA_IF_ENABLE=0")
-endif()
-
-option(OT_NCP_DNSSD "enable NCP DNSSD")
-if (OT_NCP_DNSSD)
-    target_compile_definitions(ot-config INTERFACE "OPENTHREAD_CONFIG_NCP_DNSSD_ENABLE=1")
-else()
-    target_compile_definitions(ot-config INTERFACE "OPENTHREAD_CONFIG_NCP_DNSSD_ENABLE=0")
 endif()
 
 set(COMMON_NCP_SOURCES

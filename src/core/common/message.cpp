@@ -33,7 +33,17 @@
 
 #include "message.hpp"
 
+#include "common/as_core_type.hpp"
+#include "common/code_utils.hpp"
+#include "common/debug.hpp"
+#include "common/heap.hpp"
+#include "common/locator_getters.hpp"
+#include "common/log.hpp"
+#include "common/num_utils.hpp"
+#include "common/numeric_limits.hpp"
 #include "instance/instance.hpp"
+#include "net/checksum.hpp"
+#include "net/ip6.hpp"
 
 #if OPENTHREAD_MTD || OPENTHREAD_FTD
 
@@ -318,9 +328,28 @@ void Message::SetOffset(uint16_t aOffset)
     GetMetadata().mOffset = aOffset;
 }
 
-bool Message::IsMleCommand(Mle::Command aMleCommand) const
+bool Message::IsSubTypeMle(void) const
 {
-    return (GetSubType() == kSubTypeMle) && (GetMetadata().mMleCommand == aMleCommand);
+    bool rval;
+
+    switch (GetMetadata().mSubType)
+    {
+    case kSubTypeMleGeneral:
+    case kSubTypeMleAnnounce:
+    case kSubTypeMleDiscoverRequest:
+    case kSubTypeMleDiscoverResponse:
+    case kSubTypeMleChildUpdateRequest:
+    case kSubTypeMleDataResponse:
+    case kSubTypeMleChildIdRequest:
+        rval = true;
+        break;
+
+    default:
+        rval = false;
+        break;
+    }
+
+    return rval;
 }
 
 Error Message::SetPriority(Priority aPriority)
@@ -363,14 +392,10 @@ const char *Message::PriorityToString(Priority aPriority)
         "net",    // (3) kPriorityNet
     };
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kPriorityLow);
-        ValidateNextEnum(kPriorityNormal);
-        ValidateNextEnum(kPriorityHigh);
-        ValidateNextEnum(kPriorityNet);
-    };
+    static_assert(kPriorityLow == 0, "kPriorityLow value is incorrect");
+    static_assert(kPriorityNormal == 1, "kPriorityNormal value is incorrect");
+    static_assert(kPriorityHigh == 2, "kPriorityHigh value is incorrect");
+    static_assert(kPriorityNet == 3, "kPriorityNet value is incorrect");
 
     return kPriorityStrings[aPriority];
 }
@@ -636,13 +661,7 @@ uint16_t Message::ReadBytes(const OffsetRange &aOffsetRange, void *aBuf) const
 
 Error Message::Read(uint16_t aOffset, void *aBuf, uint16_t aLength) const
 {
-    Error error = kErrorNone;
-
-    VerifyOrExit(aOffset + aLength <= GetLength(), error = kErrorParse);
-    ReadBytes(aOffset, aBuf, aLength);
-
-exit:
-    return error;
+    return (ReadBytes(aOffset, aBuf, aLength) == aLength) ? kErrorNone : kErrorParse;
 }
 
 Error Message::Read(const OffsetRange &aOffsetRange, void *aBuf, uint16_t aLength) const
@@ -650,7 +669,7 @@ Error Message::Read(const OffsetRange &aOffsetRange, void *aBuf, uint16_t aLengt
     Error error = kErrorNone;
 
     VerifyOrExit(aOffsetRange.Contains(aLength), error = kErrorParse);
-    error = Read(aOffsetRange.GetOffset(), aBuf, aLength);
+    VerifyOrExit(ReadBytes(aOffsetRange.GetOffset(), aBuf, aLength) == aLength, error = kErrorParse);
 
 exit:
     return error;
@@ -795,6 +814,16 @@ exit:
     FreeAndNullMessageOnError(messageCopy, error);
     return messageCopy;
 }
+
+#if OPENTHREAD_FTD
+bool Message::GetChildMask(uint16_t aChildIndex) const { return GetMetadata().mChildMask.Get(aChildIndex); }
+
+void Message::ClearChildMask(uint16_t aChildIndex) { GetMetadata().mChildMask.Set(aChildIndex, false); }
+
+void Message::SetChildMask(uint16_t aChildIndex) { GetMetadata().mChildMask.Set(aChildIndex, true); }
+
+bool Message::IsChildPending(void) const { return GetMetadata().mChildMask.HasAny(); }
+#endif
 
 Error Message::GetLinkInfo(ThreadLinkInfo &aLinkInfo) const
 {

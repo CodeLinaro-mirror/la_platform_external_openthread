@@ -31,7 +31,14 @@
 
 #if OPENTHREAD_CONFIG_SNTP_CLIENT_ENABLE
 
+#include "common/as_core_type.hpp"
+#include "common/code_utils.hpp"
+#include "common/debug.hpp"
+#include "common/locator_getters.hpp"
+#include "common/log.hpp"
 #include "instance/instance.hpp"
+#include "net/udp6.hpp"
+#include "thread/thread_netif.hpp"
 
 /**
  * @file
@@ -54,8 +61,8 @@ Error Client::Start(void)
 {
     Error error;
 
-    SuccessOrExit(error = mSocket.Open(Ip6::kNetifUnspecified));
-    SuccessOrExit(error = mSocket.Bind(0));
+    SuccessOrExit(error = mSocket.Open());
+    SuccessOrExit(error = mSocket.Bind(0, Ip6::kNetifUnspecified));
 
 exit:
     return error;

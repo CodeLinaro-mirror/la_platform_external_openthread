@@ -60,6 +60,7 @@ namespace Dhcp6 {
  *   This module includes definitions for DHCPv6 Server.
  *
  * @{
+ *
  */
 
 class Server : public InstanceLocator, private NonCopyable
@@ -69,11 +70,13 @@ public:
      * Initializes the object.
      *
      * @param[in]  aInstance     A reference to the OpenThread instance.
+     *
      */
     explicit Server(Instance &aInstance);
 
     /**
      * Updates DHCP Agents and DHCP ALOCs.
+     *
      */
     Error UpdateService(void);
 
@@ -88,6 +91,7 @@ private:
          *
          * @retval TRUE if the address has a matching prefix.
          * @retval FALSE if the address does not have a matching prefix.
+         *
          */
         bool IsPrefixMatch(const Ip6::Address &aAddress) const { return aAddress.MatchesPrefix(GetPrefix()); }
 
@@ -96,11 +100,13 @@ private:
          *
          * @retval TRUE if this entry is valid.
          * @retval FALSE if this entry is not valid.
+         *
          */
         bool IsValid(void) const { return mAloc.mValid; }
 
         /**
          * Sets the entry to invalid.
+         *
          */
         void Clear(void) { mAloc.mValid = false; }
 
@@ -108,6 +114,7 @@ private:
          * Returns the 6LoWPAN context ID.
          *
          * @returns The 6LoWPAN context ID.
+         *
          */
         uint8_t GetContextId(void) const { return mAloc.mAddress.mFields.m8[15]; }
 
@@ -115,6 +122,7 @@ private:
          * Returns the ALOC.
          *
          * @returns the ALOC.
+         *
          */
         Ip6::Netif::UnicastAddress &GetAloc(void) { return mAloc; }
 
@@ -122,6 +130,7 @@ private:
          * Returns the IPv6 prefix.
          *
          * @returns The IPv6 prefix.
+         *
          */
         const Ip6::Prefix &GetPrefix(void) const { return mPrefix; }
 
@@ -129,6 +138,7 @@ private:
          * Returns the IPv6 prefix.
          *
          * @returns The IPv6 prefix.
+         *
          */
         Ip6::Prefix &GetPrefix(void) { return mPrefix; }
 
@@ -136,6 +146,7 @@ private:
          * Returns the IPv6 prefix as an IPv6 address.
          *
          * @returns The IPv6 prefix as an IPv6 address.
+         *
          */
         const Ip6::Address &GetPrefixAsAddress(void) const
         {
@@ -148,6 +159,7 @@ private:
          * @param[in]  aPrefix           The IPv6 prefix.
          * @param[in]  aMeshLocalPrefix  The Mesh Local Prefix.
          * @param[in]  aContextId        The 6LoWPAN Context ID.
+         *
          */
         void Set(const Ip6::Prefix &aPrefix, const Ip6::NetworkPrefix &aMeshLocalPrefix, uint8_t aContextId)
         {
@@ -205,6 +217,7 @@ private:
 
 /**
  * @}
+ *
  */
 
 } // namespace Dhcp6

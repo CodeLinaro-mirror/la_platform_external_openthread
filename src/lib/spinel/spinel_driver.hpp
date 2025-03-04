@@ -38,6 +38,7 @@
 
 /**
  * Represents an opaque (and empty) type corresponding to a SpinelDriver object.
+ *
  */
 struct otSpinelDriver
 {
@@ -48,6 +49,7 @@ namespace Spinel {
 
 /**
  * Maximum number of Spinel Interface IDs.
+ *
  */
 #if OPENTHREAD_CONFIG_MULTIPAN_RCP_ENABLE
 static constexpr uint8_t kSpinelHeaderMaxNumIid = 4;
@@ -64,6 +66,7 @@ public:
 
     /**
      * Constructor of the SpinelDriver.
+     *
      */
     SpinelDriver(void);
 
@@ -79,6 +82,7 @@ public:
      * @retval  OT_COPROCESSOR_UNKNOWN  The initialization fails.
      * @retval  OT_COPROCESSOR_RCP      The Co-processor is a RCP.
      * @retval  OT_COPROCESSOR_NCP      The Co-processor is a NCP.
+     *
      */
     CoprocessorType Init(SpinelInterface    &aSpinelInterface,
                          bool                aSoftwareReset,
@@ -87,11 +91,13 @@ public:
 
     /**
      * Deinitialize this SpinelDriver Instance.
+     *
      */
     void Deinit(void);
 
     /**
      * Clear the rx frame buffer.
+     *
      */
     void ClearRxBuffer(void) { mRxFrameBuffer.Clear(); }
 
@@ -109,6 +115,7 @@ public:
      *
      * @retval  OT_ERROR_NONE               Successfully removed item from the property.
      * @retval  OT_ERROR_BUSY               Failed due to another operation is on going.
+     *
      */
     otError SendReset(uint8_t aResetType);
 
@@ -121,6 +128,7 @@ public:
      * will then try a hardware reset. If `aSoftwareReset` is `false`, then method will directly try a hardware reset.
      *
      * @param[in]  aSoftwareReset                 TRUE to try SW reset first, FALSE to directly try HW reset.
+     *
      */
     void ResetCoprocessor(bool aSoftwareReset);
 
@@ -130,6 +138,7 @@ public:
      * The method should be called by the system loop to process received spinel frames.
      *
      * @param[in]  aContext   The process context.
+     *
      */
     void Process(const void *aContext);
 
@@ -139,6 +148,7 @@ public:
      * The method is required by the system loop to update timer fd.
      *
      * @returns Whether there is pending frame in the buffer.
+     *
      */
     bool HasPendingFrame(void) const { return mRxFrameBuffer.HasSavedFrame(); }
 
@@ -146,6 +156,7 @@ public:
      * Returns the co-processor sw version string.
      *
      * @returns A pointer to the co-processor version string.
+     *
      */
     const char *GetVersion(void) const { return mVersion; }
 
@@ -161,6 +172,7 @@ public:
      * @retval  OT_ERROR_NONE           Successfully sent the command through spinel interface.
      * @retval  OT_ERROR_INVALID_STATE  The spinel interface is in an invalid state.
      * @retval  OT_ERROR_NO_BUFS        The spinel interface doesn't have enough buffer.
+     *
      */
     otError SendCommand(uint32_t          aCommand,
                         spinel_prop_key_t aKey,
@@ -178,6 +190,7 @@ public:
      * @retval  OT_ERROR_NONE           Successfully sent the command through spinel interface.
      * @retval  OT_ERROR_INVALID_STATE  The spinel interface is in an invalid state.
      * @retval  OT_ERROR_NO_BUFS        The spinel interface doesn't have enough buffer.
+     *
      */
     otError SendCommand(uint32_t aCommand, spinel_prop_key_t aKey, spinel_tid_t aTid);
 
@@ -187,6 +200,7 @@ public:
      * @param[in] aReceivedFrameHandler  The handler to process received spinel frames.
      * @param[in] aSavedFrameHandler     The handler to process saved spinel frames.
      * @param[in] aContext               The context to call the handler.
+     *
      */
     void SetFrameHandler(ReceivedFrameHandler aReceivedFrameHandler,
                          SavedFrameHandler    aSavedFrameHandler,
@@ -196,6 +210,7 @@ public:
      * Returns the spinel interface.
      *
      * @returns A pointer to the spinel interface object.
+     *
      */
     SpinelInterface *GetSpinelInterface(void) const { return mSpinelInterface; }
 
@@ -205,6 +220,7 @@ public:
      * @param[in] aCapability  The capability queried.
      *
      * @returns `true` if the co-processor has the capability. `false` otherwise.
+     *
      */
     bool CoprocessorHasCap(unsigned int aCapability) { return mCoprocessorCaps.Contains(aCapability); }
 
@@ -212,6 +228,7 @@ public:
      * Returns the spinel interface id.
      *
      * @returns the spinel interface id.
+     *
      */
     spinel_iid_t GetIid(void) { return mIid; }
 
@@ -227,6 +244,7 @@ private:
      *
      * @tparam Type        The array element type.
      * @tparam kMaxSize    Specifies the max array size (maximum number of elements in the array).
+     *
      */
     template <typename Type, uint16_t kMaxSize> class Array
     {

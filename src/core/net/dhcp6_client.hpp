@@ -60,10 +60,12 @@ namespace Dhcp6 {
  *   This module includes definitions for DHCPv6 Client.
  *
  * @{
+ *
  */
 
 /**
  * Implements DHCPv6 Client.
+ *
  */
 class Client : public InstanceLocator, private NonCopyable
 {
@@ -72,11 +74,14 @@ public:
      * Initializes the object.
      *
      * @param[in]  aInstance     A reference to the OpenThread instance.
+     *
      */
     explicit Client(Instance &aInstance);
 
     /**
      * Update addresses that shall be automatically created using DHCP.
+     *
+     *
      */
     void UpdateAddresses(void);
 
@@ -148,6 +153,7 @@ private:
 
 /**
  * @}
+ *
  */
 
 } // namespace Dhcp6

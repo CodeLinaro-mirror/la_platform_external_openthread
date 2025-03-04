@@ -30,6 +30,14 @@
 
 #if OPENTHREAD_CONFIG_SRP_CLIENT_ENABLE
 
+#include "common/as_core_type.hpp"
+#include "common/code_utils.hpp"
+#include "common/debug.hpp"
+#include "common/locator_getters.hpp"
+#include "common/num_utils.hpp"
+#include "common/random.hpp"
+#include "common/settings.hpp"
+#include "common/string.hpp"
 #include "instance/instance.hpp"
 
 /**
@@ -181,16 +189,12 @@ const uint32_t Client::TxJitter::kMaxJitters[] = {
 
 void Client::TxJitter::Request(Reason aReason)
 {
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kOnDeviceReboot);
-        ValidateNextEnum(kOnServerStart);
-        ValidateNextEnum(kOnServerRestart);
-        ValidateNextEnum(kOnServerSwitch);
-        ValidateNextEnum(kOnSlaacAddrAdd);
-        ValidateNextEnum(kOnSlaacAddrRemove);
-    };
+    static_assert(0 == kOnDeviceReboot, "kOnDeviceReboot value is incorrect");
+    static_assert(1 == kOnServerStart, "kOnServerStart value is incorrect");
+    static_assert(2 == kOnServerRestart, "kOnServerRestart value is incorrect");
+    static_assert(3 == kOnServerSwitch, "kOnServerSwitch value is incorrect");
+    static_assert(4 == kOnSlaacAddrAdd, "kOnSlaacAddrAdd value is incorrect");
+    static_assert(5 == kOnSlaacAddrRemove, "kOnSlaacAddrRemove value is incorrect");
 
     uint32_t maxJitter = kMaxJitters[aReason];
 
@@ -250,16 +254,12 @@ const char *Client::TxJitter::ReasonToString(Reason aReason)
         "OnSlaacAddrRemove", // (5) kOnSlaacAddrRemove
     };
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kOnDeviceReboot);
-        ValidateNextEnum(kOnServerStart);
-        ValidateNextEnum(kOnServerRestart);
-        ValidateNextEnum(kOnServerSwitch);
-        ValidateNextEnum(kOnSlaacAddrAdd);
-        ValidateNextEnum(kOnSlaacAddrRemove);
-    };
+    static_assert(0 == kOnDeviceReboot, "kOnDeviceReboot value is incorrect");
+    static_assert(1 == kOnServerStart, "kOnServerStart value is incorrect");
+    static_assert(2 == kOnServerRestart, "kOnServerRestart value is incorrect");
+    static_assert(3 == kOnServerSwitch, "kOnServerSwitch value is incorrect");
+    static_assert(4 == kOnSlaacAddrAdd, "kOnSlaacAddrAdd value is incorrect");
+    static_assert(5 == kOnSlaacAddrRemove, "kOnSlaacAddrRemove value is incorrect");
 
     return kReasonStrings[aReason];
 }
@@ -323,16 +323,12 @@ const char *Client::AutoStart::StateToString(State aState)
         "Unicast",       // (5) kSelectedUnicast
     };
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kDisabled);
-        ValidateNextEnum(kFirstTimeSelecting);
-        ValidateNextEnum(kReselecting);
-        ValidateNextEnum(kSelectedUnicastPreferred);
-        ValidateNextEnum(kSelectedAnycast);
-        ValidateNextEnum(kSelectedUnicast);
-    };
+    static_assert(0 == kDisabled, "kDisabled value is incorrect");
+    static_assert(1 == kFirstTimeSelecting, "kFirstTimeSelecting value is incorrect");
+    static_assert(2 == kReselecting, "kReselecting value is incorrect");
+    static_assert(3 == kSelectedUnicastPreferred, "kSelectedUnicastPreferred value is incorrect");
+    static_assert(4 == kSelectedAnycast, "kSelectedAnycast value is incorrect");
+    static_assert(5 == kSelectedUnicast, "kSelectedUnicast value is incorrect");
 
     return kStateStrings[aState];
 }
@@ -371,26 +367,22 @@ Client::Client(Instance &aInstance)
     , mGuardTimer(aInstance)
 #endif
 {
+    mHostInfo.Init();
+
     // The `Client` implementation uses different constant array of
     // `ItemState` to define transitions between states in `Pause()`,
     // `Stop()`, `SendUpdate`, and `ProcessResponse()`, or to convert
     // an `ItemState` to string. Here, we assert that the enumeration
     // values are correct.
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kToAdd);
-        ValidateNextEnum(kAdding);
-        ValidateNextEnum(kToRefresh);
-        ValidateNextEnum(kRefreshing);
-        ValidateNextEnum(kToRemove);
-        ValidateNextEnum(kRemoving);
-        ValidateNextEnum(kRegistered);
-        ValidateNextEnum(kRemoved);
-    };
-
-    mHostInfo.Init();
+    static_assert(kToAdd == 0, "kToAdd value is not correct");
+    static_assert(kAdding == 1, "kAdding value is not correct");
+    static_assert(kToRefresh == 2, "kToRefresh value is not correct");
+    static_assert(kRefreshing == 3, "kRefreshing value is not correct");
+    static_assert(kToRemove == 4, "kToRemove value is not correct");
+    static_assert(kRemoving == 5, "kRemoving value is not correct");
+    static_assert(kRegistered == 6, "kRegistered value is not correct");
+    static_assert(kRemoved == 7, "kRemoved value is not correct");
 }
 
 Error Client::Start(const Ip6::SockAddr &aServerSockAddr, Requester aRequester)
@@ -400,17 +392,8 @@ Error Client::Start(const Ip6::SockAddr &aServerSockAddr, Requester aRequester)
     VerifyOrExit(GetState() == kStateStopped,
                  error = (aServerSockAddr == GetServerAddress()) ? kErrorNone : kErrorBusy);
 
-    SuccessOrExit(error = mSocket.Open(Ip6::kNetifThreadInternal));
-
-    error = mSocket.Connect(aServerSockAddr);
-
-    if (error != kErrorNone)
-    {
-        LogInfo("Failed to connect to server %s: %s", aServerSockAddr.GetAddress().ToString().AsCString(),
-                ErrorToString(error));
-        IgnoreError(mSocket.Close());
-        ExitNow();
-    }
+    SuccessOrExit(error = mSocket.Open());
+    SuccessOrExit(error = mSocket.Connect(aServerSockAddr));
 
     LogInfo("%starting, server %s", (aRequester == kRequesterUser) ? "S" : "Auto-s",
             aServerSockAddr.ToString().AsCString());
@@ -1110,7 +1093,7 @@ Error Client::PrepareUpdateMessage(MsgInfo &aInfo)
     aInfo.mRecordCount      = 0;
 
 #if OPENTHREAD_CONFIG_PLATFORM_KEY_REFERENCES_ENABLE
-    aInfo.mKeyInfo.SetKeyRef(Get<Crypto::Storage::KeyRefManager>().KeyRefFor(Crypto::Storage::KeyRefManager::kEcdsa));
+    aInfo.mKeyInfo.SetKeyRef(kSrpEcdsaKeyRef);
 #endif
 
     SuccessOrExit(error = ReadOrGenerateKey(aInfo.mKeyInfo));
@@ -1959,7 +1942,7 @@ void Client::HandleUpdateDone(void)
 
 void Client::GetRemovedServices(LinkedList<Service> &aRemovedServices)
 {
-    mServices.RemoveAllMatching(aRemovedServices, kRemoved);
+    mServices.RemoveAllMatching(kRemoved, aRemovedServices);
 }
 
 Error Client::ReadResourceRecord(const Message &aMessage, uint16_t &aOffset, Dns::ResourceRecord &aRecord)
@@ -2412,8 +2395,6 @@ Error Client::SelectUnicastEntry(DnsSrpUnicastType aType, DnsSrpUnicastInfo &aIn
 
     while (Get<NetworkData::Service::Manager>().GetNextDnsSrpUnicastInfo(iterator, aType, unicastInfo) == kErrorNone)
     {
-        bool preferNewEntry;
-
         if (mAutoStart.HasSelectedServer() && (GetServerAddress() == unicastInfo.mSockAddr))
         {
             aInfo = unicastInfo;
@@ -2433,17 +2414,10 @@ Error Client::SelectUnicastEntry(DnsSrpUnicastType aType, DnsSrpUnicastInfo &aIn
             ExitNow();
         }
 #endif
-        // Prefer the server with higher version number, if equal
-        // then pick the one with numerically smaller IPv6 address.
 
-        preferNewEntry = (error == kErrorNotFound) || (unicastInfo.mVersion > aInfo.mVersion);
+        // Prefer the numerically lowest server address
 
-        if (!preferNewEntry && (unicastInfo.mVersion == aInfo.mVersion))
-        {
-            preferNewEntry = (unicastInfo.mSockAddr.GetAddress() < aInfo.mSockAddr.GetAddress());
-        }
-
-        if (preferNewEntry)
+        if ((error == kErrorNotFound) || (unicastInfo.mSockAddr.GetAddress() < aInfo.mSockAddr.GetAddress()))
         {
             aInfo = unicastInfo;
             error = kErrorNone;
@@ -2580,16 +2554,12 @@ const char *Client::StateToString(State aState)
         "ToRetry",  // kStateToRetry  (5)
     };
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kStateStopped);
-        ValidateNextEnum(kStatePaused);
-        ValidateNextEnum(kStateToUpdate);
-        ValidateNextEnum(kStateUpdating);
-        ValidateNextEnum(kStateUpdated);
-        ValidateNextEnum(kStateToRetry);
-    };
+    static_assert(kStateStopped == 0, "kStateStopped value is not correct");
+    static_assert(kStatePaused == 1, "kStatePaused value is not correct");
+    static_assert(kStateToUpdate == 2, "kStateToUpdate value is not correct");
+    static_assert(kStateUpdating == 3, "kStateUpdating value is not correct");
+    static_assert(kStateUpdated == 4, "kStateUpdated value is not correct");
+    static_assert(kStateToRetry == 5, "kStateToRetry value is not correct");
 
     return kStateStrings[aState];
 }

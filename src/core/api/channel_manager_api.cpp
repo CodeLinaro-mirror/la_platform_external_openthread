@@ -36,7 +36,11 @@
 #if OPENTHREAD_CONFIG_CHANNEL_MANAGER_ENABLE && \
     (OPENTHREAD_FTD || OPENTHREAD_CONFIG_CHANNEL_MANAGER_CSL_CHANNEL_SELECT_ENABLE)
 
-#include "instance/instance.hpp"
+#include <openthread/channel_manager.h>
+
+#include "common/as_core_type.hpp"
+#include "common/locator_getters.hpp"
+#include "utils/channel_manager.hpp"
 
 using namespace ot;
 

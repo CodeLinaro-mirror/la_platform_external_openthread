@@ -107,6 +107,7 @@ inline constexpr uint64_t HostSwap64(uint64_t v) { return Swap64(v); }
  * @param   aValue     The value to host swap.
  *
  * @returns The host swapped value.
+ *
  */
 template <typename UintType> UintType HostSwap(UintType aValue);
 
@@ -121,6 +122,7 @@ template <> inline uint64_t HostSwap(uint64_t aValue) { return HostSwap64(aValue
  * @param[in] aBuffer   Pointer to buffer to read from.
  *
  * @returns The `uint16_t` value read from buffer.
+ *
  */
 inline uint16_t ReadUint16(const uint8_t *aBuffer) { return static_cast<uint16_t>((aBuffer[0] << 8) | aBuffer[1]); }
 
@@ -130,6 +132,7 @@ inline uint16_t ReadUint16(const uint8_t *aBuffer) { return static_cast<uint16_t
  * @param[in] aBuffer   Pointer to buffer to read from.
  *
  * @returns The `uint32_t` value read from buffer.
+ *
  */
 inline uint32_t ReadUint32(const uint8_t *aBuffer)
 {
@@ -143,6 +146,7 @@ inline uint32_t ReadUint32(const uint8_t *aBuffer)
  * @param[in] aBuffer   Pointer to buffer to read from.
  *
  * @returns The value read from buffer.
+ *
  */
 inline uint32_t ReadUint24(const uint8_t *aBuffer)
 {
@@ -156,6 +160,7 @@ inline uint32_t ReadUint24(const uint8_t *aBuffer)
  * @param[in] aBuffer   Pointer to buffer to read from.
  *
  * @returns The `uint64_t` value read from buffer.
+ *
  */
 inline uint64_t ReadUint64(const uint8_t *aBuffer)
 {
@@ -173,6 +178,7 @@ inline uint64_t ReadUint64(const uint8_t *aBuffer)
  * @param[in] aBuffer   Pointer to the buffer to read from.
  *
  * @returns The `UintType` value read from the buffer.
+ *
  */
 template <typename UintType> UintType Read(const uint8_t *aBuffer);
 
@@ -186,6 +192,7 @@ template <> inline uint64_t Read(const uint8_t *aBuffer) { return ReadUint64(aBu
  *
  * @param[in]  aValue    The value to write to buffer.
  * @param[out] aBuffer   Pointer to buffer where the value will be written.
+ *
  */
 inline void WriteUint16(uint16_t aValue, uint8_t *aBuffer)
 {
@@ -198,6 +205,7 @@ inline void WriteUint16(uint16_t aValue, uint8_t *aBuffer)
  *
  * @param[in]  aValue    The value to write to buffer.
  * @param[out] aBuffer   Pointer to buffer where the value will be written.
+ *
  */
 inline void WriteUint24(uint32_t aValue, uint8_t *aBuffer)
 {
@@ -211,6 +219,7 @@ inline void WriteUint24(uint32_t aValue, uint8_t *aBuffer)
  *
  * @param[in]  aValue    The value to write to buffer.
  * @param[out] aBuffer   Pointer to buffer where the value will be written.
+ *
  */
 inline void WriteUint32(uint32_t aValue, uint8_t *aBuffer)
 {
@@ -225,6 +234,7 @@ inline void WriteUint32(uint32_t aValue, uint8_t *aBuffer)
  *
  * @param[in]  aValue    The value to write to buffer.
  * @param[out] aBuffer   Pointer to buffer where the value will be written.
+ *
  */
 inline void WriteUint64(uint64_t aValue, uint8_t *aBuffer)
 {
@@ -245,6 +255,7 @@ inline void WriteUint64(uint64_t aValue, uint8_t *aBuffer)
  *
  * @param[in] aValue    The value to write to buffer.
  * @param[in] aBuffer   Pointer to the buffer to write to.
+ *
  */
 template <typename UintType> void Write(UintType aValue, uint8_t *aBuffer);
 
@@ -279,6 +290,7 @@ inline constexpr uint64_t HostSwap64(uint64_t v) { return v; }
  * @param   aValue     The value to host swap.
  *
  * @returns The host swapped value.
+ *
  */
 template <typename UintType> UintType HostSwap(UintType aValue);
 
@@ -293,6 +305,7 @@ template <> inline uint64_t HostSwap(uint64_t aValue) { return HostSwap64(aValue
  * @param[in] aBuffer   Pointer to buffer to read from.
  *
  * @returns The `uint16_t` value read from buffer.
+ *
  */
 inline uint16_t ReadUint16(const uint8_t *aBuffer) { return static_cast<uint16_t>(aBuffer[0] | (aBuffer[1] << 8)); }
 
@@ -302,6 +315,7 @@ inline uint16_t ReadUint16(const uint8_t *aBuffer) { return static_cast<uint16_t
  * @param[in] aBuffer   Pointer to buffer to read from.
  *
  * @returns The value read from buffer.
+ *
  */
 inline uint32_t ReadUint24(const uint8_t *aBuffer)
 {
@@ -315,6 +329,7 @@ inline uint32_t ReadUint24(const uint8_t *aBuffer)
  * @param[in] aBuffer   Pointer to buffer to read from.
  *
  * @returns The `uint32_t` value read from buffer.
+ *
  */
 inline uint32_t ReadUint32(const uint8_t *aBuffer)
 {
@@ -328,6 +343,7 @@ inline uint32_t ReadUint32(const uint8_t *aBuffer)
  * @param[in] aBuffer   Pointer to buffer to read from.
  *
  * @returns The `uint64_t` value read from buffer.
+ *
  */
 inline uint64_t ReadUint64(const uint8_t *aBuffer)
 {
@@ -345,6 +361,7 @@ inline uint64_t ReadUint64(const uint8_t *aBuffer)
  * @param[in] aBuffer   Pointer to the buffer to read from.
  *
  * @returns The `UintType` value read from the buffer.
+ *
  */
 template <typename UintType> UintType Read(const uint8_t *aBuffer);
 
@@ -358,6 +375,7 @@ template <> inline uint64_t Read(const uint8_t *aBuffer) { return ReadUint64(aBu
  *
  * @param[in]  aValue    The value to write to buffer.
  * @param[out] aBuffer   Pointer to buffer where the value will be written.
+ *
  */
 inline void WriteUint16(uint16_t aValue, uint8_t *aBuffer)
 {
@@ -370,6 +388,7 @@ inline void WriteUint16(uint16_t aValue, uint8_t *aBuffer)
  *
  * @param[in]  aValue   The value to write to buffer.
  * @param[out] aBuffer  Pointer to buffer where the value will be written.
+ *
  */
 inline void WriteUint24(uint32_t aValue, uint8_t *aBuffer)
 {
@@ -383,6 +402,7 @@ inline void WriteUint24(uint32_t aValue, uint8_t *aBuffer)
  *
  * @param[in]  aValue   The value to write to buffer.
  * @param[out] aBuffer  Pointer to buffer where the value will be written.
+ *
  */
 inline void WriteUint32(uint32_t aValue, uint8_t *aBuffer)
 {
@@ -397,6 +417,7 @@ inline void WriteUint32(uint32_t aValue, uint8_t *aBuffer)
  *
  * @param[in]  aValue   The value to write to buffer.
  * @param[out] aBuffer  Pointer to buffer where the value will be written.
+ *
  */
 inline void WriteUint64(uint64_t aValue, uint8_t *aBuffer)
 {
@@ -417,6 +438,7 @@ inline void WriteUint64(uint64_t aValue, uint8_t *aBuffer)
  *
  * @param[in] aValue    The value to write to buffer.
  * @param[in] aBuffer   Pointer to the buffer to write to.
+ *
  */
 template <typename UintType> void Write(UintType aValue, uint8_t *aBuffer);
 

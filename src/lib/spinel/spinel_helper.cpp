@@ -30,6 +30,7 @@
 
 /**
  * @file This file implements the spinel helper methods.
+ *
  */
 
 namespace ot {

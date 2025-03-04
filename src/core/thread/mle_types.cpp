@@ -37,7 +37,6 @@
 #include "common/code_utils.hpp"
 #include "common/message.hpp"
 #include "common/random.hpp"
-#include "utils/static_counter.hpp"
 
 namespace ot {
 namespace Mle {
@@ -100,14 +99,10 @@ uint8_t DeviceProperties::CalculateLeaderWeight(void) const
         kPowerExternalUnstableInc, // (3) kPowerSupplyExternalUnstable
     };
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kPowerSupplyBattery);
-        ValidateNextEnum(kPowerSupplyExternal);
-        ValidateNextEnum(kPowerSupplyExternalStable);
-        ValidateNextEnum(kPowerSupplyExternalUnstable);
-    };
+    static_assert(0 == kPowerSupplyBattery, "kPowerSupplyBattery value is incorrect");
+    static_assert(1 == kPowerSupplyExternal, "kPowerSupplyExternal value is incorrect");
+    static_assert(2 == kPowerSupplyExternalStable, "kPowerSupplyExternalStable value is incorrect");
+    static_assert(3 == kPowerSupplyExternalUnstable, "kPowerSupplyExternalUnstable value is incorrect");
 
     uint8_t     weight      = kBaseWeight;
     PowerSupply powerSupply = MapEnum(mPowerSupply);
@@ -200,15 +195,11 @@ const char *RoleToString(DeviceRole aRole)
         "leader",   // (4) kRoleLeader
     };
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kRoleDisabled);
-        ValidateNextEnum(kRoleDetached);
-        ValidateNextEnum(kRoleChild);
-        ValidateNextEnum(kRoleRouter);
-        ValidateNextEnum(kRoleLeader);
-    };
+    static_assert(kRoleDisabled == 0, "kRoleDisabled value is incorrect");
+    static_assert(kRoleDetached == 1, "kRoleDetached value is incorrect");
+    static_assert(kRoleChild == 2, "kRoleChild value is incorrect");
+    static_assert(kRoleRouter == 3, "kRoleRouter value is incorrect");
+    static_assert(kRoleLeader == 4, "kRoleLeader value is incorrect");
 
     return (aRole < GetArrayLength(kRoleStrings)) ? kRoleStrings[aRole] : "invalid";
 }

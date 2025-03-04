@@ -49,6 +49,7 @@ extern "C" {
  *   This module includes functions that control the Thread stack's execution.
  *
  * @{
+ *
  */
 
 /* Represents the pointer to callback to output diag messages. */
@@ -60,6 +61,7 @@ typedef otPlatDiagOutputCallback otDiagOutputCallback;
  * @param[in]  aInstance   The OpenThread instance structure.
  * @param[in]  aCallback   A pointer to a function that is called on outputting diag messages.
  * @param[in]  aContext    A pointer to the user context.
+ *
  */
 void otDiagSetOutputCallback(otInstance *aInstance, otDiagOutputCallback aCallback, void *aContext);
 
@@ -73,6 +75,7 @@ void otDiagSetOutputCallback(otInstance *aInstance, otDiagOutputCallback aCallba
  * @retval  OT_ERROR_INVALID_ARGS       The command is supported but invalid arguments provided.
  * @retval  OT_ERROR_NONE               The command is successfully process.
  * @retval  OT_ERROR_NOT_IMPLEMENTED    The command is not supported.
+ *
  */
 otError otDiagProcessCmd(otInstance *aInstance, uint8_t aArgsLength, char *aArgs[]);
 
@@ -86,6 +89,7 @@ otError otDiagProcessCmd(otInstance *aInstance, uint8_t aArgsLength, char *aArgs
  * @retval  OT_ERROR_INVALID_ARGS       The command is supported but invalid arguments provided.
  * @retval  OT_ERROR_NOT_IMPLEMENTED    The command is not supported.
  * @retval  OT_ERROR_NO_BUFS            The command string is too long.
+ *
  */
 otError otDiagProcessCmdLine(otInstance *aInstance, const char *aString);
 
@@ -96,11 +100,13 @@ otError otDiagProcessCmdLine(otInstance *aInstance, const char *aString);
  *
  * @retval TRUE if factory diagnostics mode is enabled
  * @retval FALSE if factory diagnostics mode is disabled.
+ *
  */
 bool otDiagIsEnabled(otInstance *aInstance);
 
 /**
  * @}
+ *
  */
 
 #ifdef __cplusplus

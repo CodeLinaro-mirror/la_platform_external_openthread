@@ -30,6 +30,14 @@
 
 #if OPENTHREAD_CONFIG_DNS_DSO_ENABLE
 
+#include "common/array.hpp"
+#include "common/as_core_type.hpp"
+#include "common/code_utils.hpp"
+#include "common/debug.hpp"
+#include "common/locator_getters.hpp"
+#include "common/log.hpp"
+#include "common/num_utils.hpp"
+#include "common/random.hpp"
 #include "instance/instance.hpp"
 
 /**
@@ -1303,15 +1311,11 @@ const char *Dso::Connection::StateToString(State aState)
         "SessionEstablished",      // (4) kStateSessionEstablished,
     };
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kStateDisconnected);
-        ValidateNextEnum(kStateConnecting);
-        ValidateNextEnum(kStateConnectedButSessionless);
-        ValidateNextEnum(kStateEstablishingSession);
-        ValidateNextEnum(kStateSessionEstablished);
-    };
+    static_assert(0 == kStateDisconnected, "kStateDisconnected value is incorrect");
+    static_assert(1 == kStateConnecting, "kStateConnecting value is incorrect");
+    static_assert(2 == kStateConnectedButSessionless, "kStateConnectedButSessionless value is incorrect");
+    static_assert(3 == kStateEstablishingSession, "kStateEstablishingSession value is incorrect");
+    static_assert(4 == kStateSessionEstablished, "kStateSessionEstablished value is incorrect");
 
     return kStateStrings[aState];
 }
@@ -1324,13 +1328,9 @@ const char *Dso::Connection::MessageTypeToString(MessageType aMessageType)
         "Unidirectional", // (2) kUnidirectionalMessage
     };
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kRequestMessage);
-        ValidateNextEnum(kResponseMessage);
-        ValidateNextEnum(kUnidirectionalMessage);
-    };
+    static_assert(0 == kRequestMessage, "kRequestMessage value is incorrect");
+    static_assert(1 == kResponseMessage, "kResponseMessage value is incorrect");
+    static_assert(2 == kUnidirectionalMessage, "kUnidirectionalMessage value is incorrect");
 
     return kMessageTypeStrings[aMessageType];
 }
@@ -1350,20 +1350,16 @@ const char *Dso::Connection::DisconnectReasonToString(DisconnectReason aReason)
         "Unknown",                 // (9) kReasonUnknown
     };
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kReasonFailedToConnect);
-        ValidateNextEnum(kReasonResponseTimeout);
-        ValidateNextEnum(kReasonPeerDoesNotSupportDso);
-        ValidateNextEnum(kReasonPeerClosed);
-        ValidateNextEnum(kReasonPeerAborted);
-        ValidateNextEnum(kReasonInactivityTimeout);
-        ValidateNextEnum(kReasonKeepAliveTimeout);
-        ValidateNextEnum(kReasonServerRetryDelayRequest);
-        ValidateNextEnum(kReasonPeerMisbehavior);
-        ValidateNextEnum(kReasonUnknown);
-    };
+    static_assert(0 == kReasonFailedToConnect, "kReasonFailedToConnect value is incorrect");
+    static_assert(1 == kReasonResponseTimeout, "kReasonResponseTimeout value is incorrect");
+    static_assert(2 == kReasonPeerDoesNotSupportDso, "kReasonPeerDoesNotSupportDso value is incorrect");
+    static_assert(3 == kReasonPeerClosed, "kReasonPeerClosed value is incorrect");
+    static_assert(4 == kReasonPeerAborted, "kReasonPeerAborted value is incorrect");
+    static_assert(5 == kReasonInactivityTimeout, "kReasonInactivityTimeout value is incorrect");
+    static_assert(6 == kReasonKeepAliveTimeout, "kReasonKeepAliveTimeout value is incorrect");
+    static_assert(7 == kReasonServerRetryDelayRequest, "kReasonServerRetryDelayRequest value is incorrect");
+    static_assert(8 == kReasonPeerMisbehavior, "kReasonPeerMisbehavior value is incorrect");
+    static_assert(9 == kReasonUnknown, "kReasonUnknown value is incorrect");
 
     return kDisconnectReasonStrings[aReason];
 }

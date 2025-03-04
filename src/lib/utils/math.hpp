@@ -49,6 +49,7 @@ namespace Utils {
  * @param[in] aSecond The second value.
  *
  * @returns The minimum of @p aFirst and @p aSecond.
+ *
  */
 template <typename Type> Type Min(Type aFirst, Type aSecond) { return (aFirst < aSecond) ? aFirst : aSecond; }
 
@@ -63,6 +64,7 @@ template <typename Type> Type Min(Type aFirst, Type aSecond) { return (aFirst < 
  * @param[in] aSecond The second value.
  *
  * @returns The maximum of @p aFirst and @p aSecond.
+ *
  */
 template <typename Type> Type Max(Type aFirst, Type aSecond) { return (aFirst < aSecond) ? aSecond : aFirst; }
 
@@ -72,6 +74,7 @@ template <typename Type> Type Max(Type aFirst, Type aSecond) { return (aFirst < 
  * @param[in] aUint32   A `uint32_t` value.
  *
  * @returns The @p aUint32 value as `unsigned long`.
+ *
  */
 inline unsigned long ToUlong(uint32_t aUint32) { return static_cast<unsigned long>(aUint32); }
 

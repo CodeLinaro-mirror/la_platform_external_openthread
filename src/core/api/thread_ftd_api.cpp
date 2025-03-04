@@ -35,7 +35,10 @@
 
 #if OPENTHREAD_FTD
 
-#include "instance/instance.hpp"
+#include <openthread/thread_ftd.h>
+
+#include "common/as_core_type.hpp"
+#include "common/locator_getters.hpp"
 
 using namespace ot;
 
@@ -176,7 +179,25 @@ exit:
 
 otError otThreadBecomeRouter(otInstance *aInstance)
 {
-    return AsCoreType(aInstance).Get<Mle::MleRouter>().BecomeRouter(ThreadStatusTlv::kHaveChildIdRequest);
+    Error error = kErrorInvalidState;
+
+    switch (AsCoreType(aInstance).Get<Mle::MleRouter>().GetRole())
+    {
+    case Mle::kRoleDisabled:
+    case Mle::kRoleDetached:
+        break;
+
+    case Mle::kRoleChild:
+        error = AsCoreType(aInstance).Get<Mle::MleRouter>().BecomeRouter(ThreadStatusTlv::kHaveChildIdRequest);
+        break;
+
+    case Mle::kRoleRouter:
+    case Mle::kRoleLeader:
+        error = kErrorNone;
+        break;
+    }
+
+    return error;
 }
 
 otError otThreadBecomeLeader(otInstance *aInstance)

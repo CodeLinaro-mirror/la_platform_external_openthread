@@ -33,6 +33,11 @@
 
 #include "child.hpp"
 
+#include "common/array.hpp"
+#include "common/code_utils.hpp"
+#include "common/debug.hpp"
+#include "common/locator_getters.hpp"
+#include "common/num_utils.hpp"
 #include "instance/instance.hpp"
 
 namespace ot {
@@ -87,11 +92,11 @@ MlrState Child::Ip6AddrEntry::GetMlrState(const Child &aChild) const
 
     index = aChild.mIp6Addresses.IndexOf(*this);
 
-    if (aChild.mMlrToRegisterSet.Has(index))
+    if (aChild.mMlrToRegisterMask.Get(index))
     {
         state = kMlrStateToRegister;
     }
-    else if (aChild.mMlrRegisteredSet.Has(index))
+    else if (aChild.mMlrRegisteredMask.Get(index))
     {
         state = kMlrStateRegistered;
     }
@@ -108,8 +113,8 @@ void Child::Ip6AddrEntry::SetMlrState(MlrState aState, Child &aChild)
 
     index = aChild.mIp6Addresses.IndexOf(*this);
 
-    aChild.mMlrToRegisterSet.Update(index, aState == kMlrStateToRegister);
-    aChild.mMlrRegisteredSet.Update(index, aState == kMlrStateRegistered);
+    aChild.mMlrToRegisterMask.Set(index, aState == kMlrStateToRegister);
+    aChild.mMlrRegisteredMask.Set(index, aState == kMlrStateRegistered);
 }
 
 #endif // OPENTHREAD_CONFIG_TMF_PROXY_MLR_ENABLE
@@ -130,8 +135,8 @@ void Child::ClearIp6Addresses(void)
     mMeshLocalIid.Clear();
     mIp6Addresses.Clear();
 #if OPENTHREAD_FTD && OPENTHREAD_CONFIG_TMF_PROXY_MLR_ENABLE
-    mMlrToRegisterSet.Clear();
-    mMlrRegisteredSet.Clear();
+    mMlrToRegisterMask.Clear();
+    mMlrRegisteredMask.Clear();
 #endif
 }
 
@@ -232,11 +237,11 @@ Error Child::RemoveIp6Address(const Ip6::Address &aAddress)
         uint16_t entryIndex = mIp6Addresses.IndexOf(*entry);
         uint16_t lastIndex  = mIp6Addresses.GetLength() - 1;
 
-        mMlrToRegisterSet.Update(entryIndex, mMlrToRegisterSet.Has(lastIndex));
-        mMlrToRegisterSet.Remove(lastIndex);
+        mMlrToRegisterMask.Set(entryIndex, mMlrToRegisterMask.Get(lastIndex));
+        mMlrToRegisterMask.Set(lastIndex, false);
 
-        mMlrRegisteredSet.Update(entryIndex, mMlrRegisteredSet.Has(lastIndex));
-        mMlrRegisteredSet.Remove(lastIndex);
+        mMlrRegisteredMask.Set(entryIndex, mMlrRegisteredMask.Get(lastIndex));
+        mMlrRegisteredMask.Set(lastIndex, false);
     }
 #endif
 

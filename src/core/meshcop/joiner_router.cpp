@@ -35,7 +35,19 @@
 
 #if OPENTHREAD_FTD
 
+#include <stdio.h>
+
+#include "common/as_core_type.hpp"
+#include "common/code_utils.hpp"
+#include "common/encoding.hpp"
+#include "common/locator_getters.hpp"
+#include "common/log.hpp"
 #include "instance/instance.hpp"
+#include "meshcop/meshcop.hpp"
+#include "meshcop/meshcop_tlvs.hpp"
+#include "thread/mle.hpp"
+#include "thread/thread_netif.hpp"
+#include "thread/uri_paths.hpp"
 
 namespace ot {
 namespace MeshCoP {
@@ -69,7 +81,7 @@ void JoinerRouter::Start(void)
 
         VerifyOrExit(!mSocket.IsBound());
 
-        IgnoreError(mSocket.Open(Ip6::kNetifThreadInternal));
+        IgnoreError(mSocket.Open());
         IgnoreError(mSocket.Bind(port));
         IgnoreError(Get<Ip6::Filter>().AddUnsecurePort(port));
         LogInfo("Joiner Router: start");
@@ -161,7 +173,7 @@ template <> void JoinerRouter::HandleTmf<kUriRelayTx>(Coap::Message &aMessage, c
     Kek                      kek;
     OffsetRange              offsetRange;
     Message                 *message = nullptr;
-    Message::Settings        settings(kNoLinkSecurity, Message::kPriorityNet);
+    Message::Settings        settings(Message::kNoLinkSecurity, Message::kPriorityNet);
     Ip6::MessageInfo         messageInfo;
 
     VerifyOrExit(aMessage.IsNonConfirmablePostRequest(), error = kErrorDrop);
@@ -309,7 +321,7 @@ exit:
 void JoinerRouter::HandleJoinerEntrustResponse(void                *aContext,
                                                otMessage           *aMessage,
                                                const otMessageInfo *aMessageInfo,
-                                               otError              aResult)
+                                               Error                aResult)
 {
     static_cast<JoinerRouter *>(aContext)->HandleJoinerEntrustResponse(AsCoapMessagePtr(aMessage),
                                                                        AsCoreTypePtr(aMessageInfo), aResult);
@@ -332,6 +344,14 @@ void JoinerRouter::HandleJoinerEntrustResponse(Coap::Message          *aMessage,
 
 exit:
     return;
+}
+
+void JoinerRouter::JoinerEntrustMetadata::ReadFrom(const Message &aMessage)
+{
+    uint16_t length = aMessage.GetLength();
+
+    OT_ASSERT(length >= sizeof(*this));
+    IgnoreError(aMessage.Read(length - sizeof(*this), *this));
 }
 
 } // namespace MeshCoP

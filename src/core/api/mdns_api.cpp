@@ -33,11 +33,14 @@
 
 #include "openthread-core-config.h"
 
-#if OPENTHREAD_CONFIG_MULTICAST_DNS_ENABLE && OPENTHREAD_CONFIG_MULTICAST_DNS_PUBLIC_API_ENABLE
+#include <openthread/mdns.h>
 
 #include "instance/instance.hpp"
+#include "net/mdns.hpp"
 
 using namespace ot;
+
+#if OPENTHREAD_CONFIG_MULTICAST_DNS_ENABLE && OPENTHREAD_CONFIG_MULTICAST_DNS_PUBLIC_API_ENABLE
 
 otError otMdnsSetEnabled(otInstance *aInstance, bool aEnable, uint32_t aInfraIfIndex)
 {

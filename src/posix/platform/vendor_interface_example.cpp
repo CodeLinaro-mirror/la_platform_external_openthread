@@ -45,6 +45,7 @@ using ot::Spinel::SpinelInterface;
 
 /**
  * Defines the vendor implementation object.
+ *
  */
 class VendorInterfaceImpl
 {

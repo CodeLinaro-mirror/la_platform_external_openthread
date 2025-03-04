@@ -73,11 +73,13 @@
  * Initializes NCP app.
  *
  * @param[in]  aInstance    A pointer to the OpenThread instance.
+ *
  */
 void otAppNcpInit(otInstance *aInstance);
 
 /**
  * Deinitializes NCP app.
+ *
  */
 void otAppNcpUpdate(otSysMainloopContext *aContext);
 
@@ -85,6 +87,7 @@ void otAppNcpUpdate(otSysMainloopContext *aContext);
  * Updates the file descriptor sets with file descriptors used by console.
  *
  * @param[in,out]   aMainloop   A pointer to the mainloop context.
+ *
  */
 void otAppNcpProcess(const otSysMainloopContext *aContext);
 
@@ -92,11 +95,13 @@ void otAppNcpProcess(const otSysMainloopContext *aContext);
  * Initializes CLI app.
  *
  * @param[in]  aInstance    A pointer to the OpenThread instance.
+ *
  */
 void otAppCliInit(otInstance *aInstance);
 
 /**
  * Deinitializes CLI app.
+ *
  */
 void otAppCliDeinit(void);
 
@@ -104,6 +109,7 @@ void otAppCliDeinit(void);
  * Updates the file descriptor sets with file descriptors used by console.
  *
  * @param[in,out]   aMainloop   A pointer to the mainloop context.
+ *
  */
 void otAppCliUpdate(otSysMainloopContext *aMainloop);
 
@@ -111,6 +117,7 @@ void otAppCliUpdate(otSysMainloopContext *aMainloop);
  * Performs console driver processing.
  *
  * @param[in]    aMainloop      A pointer to the mainloop context.
+ *
  */
 void otAppCliProcess(const otSysMainloopContext *aMainloop);
 
@@ -124,6 +131,7 @@ typedef struct PosixConfig
 
 /**
  * Defines the argument return values.
+ *
  */
 enum
 {
