@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2016, The OpenThread Authors.
+ *  Copyright (c) 2024, The OpenThread Authors.
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -28,37 +28,63 @@
 
 /**
  * @file
- *   This file implements CRC16 computations.
+ *   This file implements the Wake-up End Device of the subset of IEEE 802.15.4 MAC primitives.
  */
 
-#include "crc16.hpp"
+#include "sub_mac.hpp"
+
+#if OPENTHREAD_CONFIG_WAKEUP_END_DEVICE_ENABLE
+
+#include "instance/instance.hpp"
 
 namespace ot {
+namespace Mac {
 
-Crc16::Crc16(Polynomial aPolynomial)
+RegisterLogModule("SubMac");
+
+void SubMac::WedInit(void)
 {
-    mPolynomial = static_cast<uint16_t>(aPolynomial);
-    Init();
+    mWakeupListenInterval = 0;
+    mWedTimer.Stop();
 }
 
-void Crc16::Update(uint8_t aByte)
+void SubMac::UpdateWakeupListening(bool aEnable, uint32_t aInterval, uint32_t aDuration, uint8_t aChannel)
 {
-    uint8_t i;
+    VerifyOrExit(RadioSupportsReceiveTiming());
 
-    mCrc = mCrc ^ static_cast<uint16_t>(aByte << 8);
-    i    = 8;
+    mWakeupListenInterval = aInterval;
+    mWakeupListenDuration = aDuration;
+    mWakeupChannel        = aChannel;
+    mWedTimer.Stop();
 
-    do
+    if (aEnable)
     {
-        if (mCrc & 0x8000)
-        {
-            mCrc = static_cast<uint16_t>(mCrc << 1) ^ mPolynomial;
-        }
-        else
-        {
-            mCrc = static_cast<uint16_t>(mCrc << 1);
-        }
-    } while (--i);
+        mWedSampleTime      = TimerMicro::GetNow() + kCslReceiveTimeAhead - mWakeupListenInterval;
+        mWedSampleTimeRadio = Get<Radio>().GetNow() + kCslReceiveTimeAhead - mWakeupListenInterval;
+
+        HandleWedTimer();
+    }
+
+exit:
+    return;
 }
 
+void SubMac::HandleWedTimer(Timer &aTimer) { aTimer.Get<SubMac>().HandleWedTimer(); }
+
+void SubMac::HandleWedTimer(void)
+{
+    mWedSampleTime += mWakeupListenInterval;
+    mWedSampleTimeRadio += mWakeupListenInterval;
+    mWedTimer.FireAt(mWedSampleTime + mWakeupListenDuration + kWedReceiveTimeAfter);
+
+    if (mState != kStateDisabled)
+    {
+        IgnoreError(
+            Get<Radio>().ReceiveAt(mWakeupChannel, static_cast<uint32_t>(mWedSampleTimeRadio), mWakeupListenDuration));
+    }
+}
+
+} // namespace Mac
 } // namespace ot
+
+#endif // OPENTHREAD_CONFIG_WAKEUP_END_DEVICE_ENABLE
