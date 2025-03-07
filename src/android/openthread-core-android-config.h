@@ -353,4 +353,8 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 // Sets microseconds ahead should MAC deliver CSL frame to SubMac.
 #define OPENTHREAD_CONFIG_MAC_CSL_REQUEST_AHEAD_US 4000
 
+// Enables the SRP server "Fast Start Mode" feature for mobile phone to receive SRP registrations
+// earlier
+#define OPENTHREAD_CONFIG_SRP_SERVER_FAST_START_MODE_ENABLE 1
+
 #endif // OPENTHREAD_CORE_ANDROID_CONFIG_H_
