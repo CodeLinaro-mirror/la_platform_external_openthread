@@ -35,10 +35,6 @@
 
 #if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
 
-#include <openthread/border_routing.h>
-#include <openthread/platform/border_routing.h>
-
-#include "border_router/routing_manager.hpp"
 #include "instance/instance.hpp"
 
 using namespace ot;
@@ -225,8 +221,7 @@ void otBorderRoutingDhcp6PdSetEnabled(otInstance *aInstance, bool aEnabled)
 
 otBorderRoutingDhcp6PdState otBorderRoutingDhcp6PdGetState(otInstance *aInstance)
 {
-    return static_cast<otBorderRoutingDhcp6PdState>(
-        AsCoreType(aInstance).Get<BorderRouter::RoutingManager>().GetDhcp6PdState());
+    return MapEnum(AsCoreType(aInstance).Get<BorderRouter::RoutingManager>().GetDhcp6PdState());
 }
 
 void otBorderRoutingDhcp6PdSetRequestCallback(otInstance                           *aInstance,

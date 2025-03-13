@@ -133,16 +133,6 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 #define OPENTHREAD_CONFIG_MLE_IP_ADDRS_PER_CHILD 6
 
 /**
- * @def OPENTHREAD_CONFIG_MLE_SEND_LINK_REQUEST_ON_ADV_TIMEOUT
- *
- * Define to 1 to send an MLE Link Request when MAX_NEIGHBOR_AGE is reached for a neighboring router.
- *
- * This is enabled to increase reliability of exchanges between routers (default on OpenThread is disabled).
- *
- */
-#define OPENTHREAD_CONFIG_MLE_SEND_LINK_REQUEST_ON_ADV_TIMEOUT 1
-
-/**
  * @def OPENTHREAD_CONFIG_MAX_STATECHANGE_HANDLERS
  *
  * The maximum number of state-changed callback handlers (set using `otSetStateChangedCallback()`).
