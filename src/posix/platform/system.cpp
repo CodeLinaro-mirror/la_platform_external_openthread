@@ -373,7 +373,6 @@ void otSysDeinit(void)
  * @param[in,out]  aContext  A reference to the mainloop context.
  *
  * @returns The value returned from select().
- *
  */
 static int trySelect(otSysMainloopContext &aContext)
 {
