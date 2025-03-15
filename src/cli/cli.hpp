@@ -48,7 +48,6 @@
 #include <openthread/ip6.h>
 #include <openthread/link.h>
 #include <openthread/logging.h>
-#include <openthread/mesh_diag.h>
 #include <openthread/netdata.h>
 #include <openthread/ping_sender.h>
 #include <openthread/sntp.h>
@@ -70,6 +69,7 @@
 #include "cli/cli_link_metrics.hpp"
 #include "cli/cli_mac_filter.hpp"
 #include "cli/cli_mdns.hpp"
+#include "cli/cli_mesh_diag.hpp"
 #include "cli/cli_network_data.hpp"
 #include "cli/cli_ping.hpp"
 #include "cli/cli_srp_client.hpp"
@@ -92,7 +92,6 @@ namespace ot {
  *
  * @brief
  *   This namespace contains definitions for the CLI interpreter.
- *
  */
 namespace Cli {
 
@@ -103,7 +102,6 @@ extern "C" void otCliOutputFormat(const char *aFmt, ...);
 
 /**
  * Implements the CLI interpreter.
- *
  */
 class Interpreter : public OutputImplementer, public Utils
 {
@@ -115,6 +113,7 @@ class Interpreter : public OutputImplementer, public Utils
     friend class Joiner;
     friend class LinkMetrics;
     friend class Mdns;
+    friend class MeshDiag;
     friend class NetworkData;
     friend class PingSender;
     friend class SrpClient;
@@ -139,7 +138,6 @@ public:
      * Returns a reference to the interpreter object.
      *
      * @returns A reference to the interpreter object.
-     *
      */
     static Interpreter &GetInterpreter(void)
     {
@@ -154,7 +152,6 @@ public:
      * @param[in]  aInstance  The OpenThread instance structure.
      * @param[in]  aCallback  A pointer to a callback method.
      * @param[in]  aContext   A pointer to a user context.
-     *
      */
     static void Initialize(otInstance *aInstance, otCliOutputCallback aCallback, void *aContext);
 
@@ -162,17 +159,15 @@ public:
      * Returns whether the interpreter is initialized.
      *
      * @returns  Whether the interpreter is initialized.
-     *
      */
     static bool IsInitialized(void) { return sInterpreter != nullptr; }
 
     /**
      * Interprets a CLI command.
      *
-     * @param[in]  aBuf        A pointer to a string.
-     *
+     * @param[in]  aLine        A pointer to a command string.
      */
-    void ProcessLine(char *aBuf);
+    void ProcessLine(char *aLine);
 
     /**
      * Adds commands to the user command table.
@@ -236,27 +231,6 @@ private:
                                    const otIp6Address *aMeshLocalAddress,
                                    uint16_t            aRloc16);
     void        HandleLocateResult(otError aError, const otIp6Address *aMeshLocalAddress, uint16_t aRloc16);
-#endif
-#if OPENTHREAD_CONFIG_MESH_DIAG_ENABLE && OPENTHREAD_FTD
-    static void HandleMeshDiagDiscoverDone(otError aError, otMeshDiagRouterInfo *aRouterInfo, void *aContext);
-    void        HandleMeshDiagDiscoverDone(otError aError, otMeshDiagRouterInfo *aRouterInfo);
-    static void HandleMeshDiagQueryChildTableResult(otError                     aError,
-                                                    const otMeshDiagChildEntry *aChildEntry,
-                                                    void                       *aContext);
-    void        HandleMeshDiagQueryChildTableResult(otError aError, const otMeshDiagChildEntry *aChildEntry);
-    static void HandleMeshDiagQueryChildIp6Addrs(otError                    aError,
-                                                 uint16_t                   aChildRloc16,
-                                                 otMeshDiagIp6AddrIterator *aIp6AddrIterator,
-                                                 void                      *aContext);
-    void        HandleMeshDiagQueryChildIp6Addrs(otError                    aError,
-                                                 uint16_t                   aChildRloc16,
-                                                 otMeshDiagIp6AddrIterator *aIp6AddrIterator);
-    static void HandleMeshDiagQueryRouterNeighborTableResult(otError                              aError,
-                                                             const otMeshDiagRouterNeighborEntry *aNeighborEntry,
-                                                             void                                *aContext);
-    void        HandleMeshDiagQueryRouterNeighborTableResult(otError                              aError,
-                                                             const otMeshDiagRouterNeighborEntry *aNeighborEntry);
-
 #endif
 #if OPENTHREAD_FTD && OPENTHREAD_CONFIG_TMF_PROXY_MLR_ENABLE && OPENTHREAD_CONFIG_COMMISSIONER_ENABLE
     static void HandleMlrRegResult(void               *aContext,
@@ -333,6 +307,11 @@ private:
 
 #if OPENTHREAD_CONFIG_CLI_REGISTER_IP6_RECV_CALLBACK
     static void HandleIp6Receive(otMessage *aMessage, void *aContext);
+#endif
+
+#if OPENTHREAD_CONFIG_WAKEUP_COORDINATOR_ENABLE
+    static void HandleWakeupResult(otError aError, void *aContext);
+    void        HandleWakeupResult(otError aError);
 #endif
 
 #endif // OPENTHREAD_FTD || OPENTHREAD_MTD
@@ -428,6 +407,9 @@ private:
 #endif
 #if OPENTHREAD_CONFIG_PING_SENDER_ENABLE
     PingSender mPing;
+#endif
+#if OPENTHREAD_CONFIG_MESH_DIAG_ENABLE && OPENTHREAD_FTD
+    MeshDiag mMeshDiag;
 #endif
 #endif // OPENTHREAD_FTD || OPENTHREAD_MTD
 

@@ -29,7 +29,6 @@
 /**
  * @file
  *   This file includes implementation for the RA-based routing management.
- *
  */
 
 #include "border_router/routing_manager.hpp"
@@ -42,24 +41,7 @@
 #include <openthread/platform/border_routing.h>
 #include <openthread/platform/infra_if.h>
 
-#include "common/code_utils.hpp"
-#include "common/debug.hpp"
-#include "common/locator_getters.hpp"
-#include "common/log.hpp"
-#include "common/num_utils.hpp"
-#include "common/numeric_limits.hpp"
-#include "common/random.hpp"
-#include "common/settings.hpp"
-#include "common/type_traits.hpp"
 #include "instance/instance.hpp"
-#include "meshcop/extended_panid.hpp"
-#include "net/ip6.hpp"
-#include "net/nat64_translator.hpp"
-#include "net/nd6.hpp"
-#include "thread/mle_router.hpp"
-#include "thread/network_data_leader.hpp"
-#include "thread/network_data_local.hpp"
-#include "thread/network_data_notifier.hpp"
 
 namespace ot {
 
@@ -480,6 +462,9 @@ void RoutingManager::EvaluateRoutingPolicy(void)
 #if OPENTHREAD_CONFIG_NAT64_BORDER_ROUTING_ENABLE
     mNat64PrefixManager.Evaluate();
 #endif
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_DHCP6_PD_ENABLE
+    mPdPrefixManager.Evaluate();
+#endif
 
     if (IsInitialPolicyEvaluationDone())
     {
@@ -589,6 +574,7 @@ void RoutingManager::SendRouterAdvertisement(RouterAdvTxMode aRaTxMode)
     RouterAdvert::Header    header;
     Ip6::Address            destAddress;
     InfraIf::Icmp6Packet    packet;
+    LinkLayerAddress        linkAddr;
 
     LogInfo("Preparing RA");
 
@@ -602,16 +588,11 @@ void RoutingManager::SendRouterAdvertisement(RouterAdvTxMode aRaTxMode)
     }
 
     mRxRaTracker.SetHeaderFlagsOn(header);
+    header.SetSnacRouterFlag();
 
-    SuccessOrExit(error = raMsg.AppendHeader(header));
+    SuccessOrExit(error = raMsg.Append(header));
 
-    LogInfo("- RA Header - flags - M:%u O:%u", header.IsManagedAddressConfigFlagSet(), header.IsOtherConfigFlagSet());
-    LogInfo("- RA Header - default route - lifetime:%u", header.GetRouterLifetime());
-
-#if OPENTHREAD_CONFIG_BORDER_ROUTING_STUB_ROUTER_FLAG_IN_EMITTED_RA_ENABLE
-    SuccessOrExit(error = raMsg.AppendFlagsExtensionOption(/* aStubRouterFlag */ true));
-    LogInfo("- FlagsExt - StubRouter:1");
-#endif
+    LogRaHeader(header);
 
     // Append PIO for local on-link prefix if is either being
     // advertised or deprecated and for old prefix if is being
@@ -628,11 +609,18 @@ void RoutingManager::SendRouterAdvertisement(RouterAdvTxMode aRaTxMode)
         SuccessOrExit(error = mRioAdvertiser.AppendRios(raMsg));
     }
 
+    if (Get<InfraIf>().GetLinkLayerAddress(linkAddr) == kErrorNone)
+    {
+        SuccessOrExit(error = raMsg.AppendLinkLayerOption(linkAddr, Option::kSourceLinkLayerAddr));
+    }
+
     if (mExtraRaOptions.GetLength() > 0)
     {
         SuccessOrExit(error = raMsg.AppendBytes(mExtraRaOptions.GetBytes(), mExtraRaOptions.GetLength()));
     }
 
+    // A valid RA message should contain at lease one option.
+    // Exit when the size of packet is less than the size of header.
     VerifyOrExit(raMsg.ContainsAnyOptions());
 
     destAddress.SetToLinkLocalAllNodesMulticast();
@@ -690,7 +678,8 @@ bool RoutingManager::IsValidOnLinkPrefix(const PrefixInfoOption &aPio)
 
     aPio.GetPrefix(prefix);
 
-    return IsValidOnLinkPrefix(prefix) && aPio.IsOnLinkFlagSet() && aPio.IsAutoAddrConfigFlagSet();
+    return IsValidOnLinkPrefix(prefix) && aPio.IsOnLinkFlagSet() &&
+           (aPio.IsAutoAddrConfigFlagSet() || aPio.IsDhcp6PdPreferredFlagSet());
 }
 
 bool RoutingManager::IsValidOnLinkPrefix(const Ip6::Prefix &aOnLinkPrefix)
@@ -875,6 +864,13 @@ exit:
 
 #if OT_SHOULD_LOG_AT(OT_LOG_LEVEL_INFO)
 
+void RoutingManager::LogRaHeader(const RouterAdvert::Header &aRaHeader)
+{
+    LogInfo("- RA Header - flags - M:%u O:%u S:%u", aRaHeader.IsManagedAddressConfigFlagSet(),
+            aRaHeader.IsOtherConfigFlagSet(), aRaHeader.IsSnacRouterFlagSet());
+    LogInfo("- RA Header - default route - lifetime:%u", aRaHeader.GetRouterLifetime());
+}
+
 void RoutingManager::LogPrefixInfoOption(const Ip6::Prefix &aPrefix,
                                          uint32_t           aValidLifetime,
                                          uint32_t           aPreferredLifetime)
@@ -897,15 +893,20 @@ const char *RoutingManager::RouterAdvOriginToString(RouterAdvOrigin aRaOrigin)
         "(this BR other sw entity)", // (2) kThisBrOtherEntity
     };
 
-    static_assert(0 == kAnotherRouter, "kAnotherRouter value is incorrect");
-    static_assert(1 == kThisBrRoutingManager, "kThisBrRoutingManager value is incorrect");
-    static_assert(2 == kThisBrOtherEntity, "kThisBrOtherEntity value is incorrect");
+    struct EnumCheck
+    {
+        InitEnumValidatorCounter();
+        ValidateNextEnum(kAnotherRouter);
+        ValidateNextEnum(kThisBrRoutingManager);
+        ValidateNextEnum(kThisBrOtherEntity);
+    };
 
     return kOriginStrings[aRaOrigin];
 }
 
 #else
 
+void RoutingManager::LogRaHeader(const RouterAdvert::Header &) {}
 void RoutingManager::LogPrefixInfoOption(const Ip6::Prefix &, uint32_t, uint32_t) {}
 void RoutingManager::LogRouteInfoOption(const Ip6::Prefix &, uint32_t, RoutePreference) {}
 
@@ -1206,10 +1207,6 @@ void RoutingManager::RxRaTracker::ProcessRouterAdvertMessage(const RouterAdvert:
             ProcessRouteInfoOption(static_cast<const RouteInfoOption &>(option), *router);
             break;
 
-        case Option::kTypeRaFlagsExtension:
-            ProcessRaFlagsExtOption(static_cast<const RaFlagsExtOption &>(option), *router);
-            break;
-
         default:
             break;
         }
@@ -1229,22 +1226,14 @@ void RoutingManager::RxRaTracker::ProcessRaHeader(const RouterAdvert::Header &aR
                                                   Router                     &aRouter,
                                                   RouterAdvOrigin             aRaOrigin)
 {
-    bool                managedFlag = aRaHeader.IsManagedAddressConfigFlagSet();
-    bool                otherFlag   = aRaHeader.IsOtherConfigFlagSet();
     Entry<RoutePrefix> *entry;
     Ip6::Prefix         prefix;
 
-    LogInfo("- RA Header - flags - M:%u O:%u", managedFlag, otherFlag);
+    LogRaHeader(aRaHeader);
 
-    if (aRouter.mManagedAddressConfigFlag != managedFlag)
-    {
-        aRouter.mManagedAddressConfigFlag = managedFlag;
-    }
-
-    if (aRouter.mOtherConfigFlag != otherFlag)
-    {
-        aRouter.mOtherConfigFlag = otherFlag;
-    }
+    aRouter.mManagedAddressConfigFlag = aRaHeader.IsManagedAddressConfigFlagSet();
+    aRouter.mOtherConfigFlag          = aRaHeader.IsOtherConfigFlagSet();
+    aRouter.mSnacRouterFlag           = aRaHeader.IsSnacRouterFlagSet();
 
     if (aRaOrigin == kThisBrOtherEntity)
     {
@@ -1416,17 +1405,6 @@ void RoutingManager::RxRaTracker::ProcessRouteInfoOption(const RouteInfoOption &
     }
 
     entry->SetDisregardFlag(disregard);
-
-exit:
-    return;
-}
-
-void RoutingManager::RxRaTracker::ProcessRaFlagsExtOption(const RaFlagsExtOption &aRaFlagsOption, Router &aRouter)
-{
-    VerifyOrExit(aRaFlagsOption.IsValid());
-    aRouter.mStubRouterFlag = aRaFlagsOption.IsStubRouterFlagSet();
-
-    LogInfo("- FlagsExt - StubRouter:%u", aRouter.mStubRouterFlag);
 
 exit:
     return;
@@ -1830,13 +1808,22 @@ void RoutingManager::RxRaTracker::HandleRouterTimer(void)
 
 void RoutingManager::RxRaTracker::SendNeighborSolicitToRouter(const Router &aRouter)
 {
-    InfraIf::Icmp6Packet   packet;
-    NeighborSolicitMessage neighborSolicitMsg;
+    InfraIf::Icmp6Packet  packet;
+    NeighborSolicitHeader nsHdr;
+    TxMessage             nsMsg;
+    LinkLayerAddress      linkAddr;
 
     VerifyOrExit(!Get<RoutingManager>().mRsSender.IsInProgress());
 
-    neighborSolicitMsg.SetTargetAddress(aRouter.mAddress);
-    packet.InitFrom(neighborSolicitMsg);
+    nsHdr.SetTargetAddress(aRouter.mAddress);
+    SuccessOrExit(nsMsg.Append(nsHdr));
+
+    if (Get<InfraIf>().GetLinkLayerAddress(linkAddr) == kErrorNone)
+    {
+        SuccessOrExit(nsMsg.AppendLinkLayerOption(linkAddr, Option::kSourceLinkLayerAddr));
+    }
+
+    nsMsg.GetAsPacket(packet);
 
     IgnoreError(Get<RoutingManager>().mInfraIf.Send(packet, aRouter.mAddress));
 
@@ -1862,7 +1849,9 @@ void RoutingManager::RxRaTracker::SetHeaderFlagsOn(RouterAdvert::Header &aHeader
 
 bool RoutingManager::RxRaTracker::IsAddressOnLink(const Ip6::Address &aAddress) const
 {
-    bool isOnLink = false;
+    bool isOnLink = Get<RoutingManager>().mOnLinkPrefixManager.AddressMatchesLocalPrefix(aAddress);
+
+    VerifyOrExit(!isOnLink);
 
     for (const Router &router : mRouters)
     {
@@ -2150,7 +2139,7 @@ void RoutingManager::RxRaTracker::Router::CopyInfoTo(RouterEntry &aEntry, TimeMi
     aEntry.mAge                      = aUptime - mDiscoverTime;
     aEntry.mManagedAddressConfigFlag = mManagedAddressConfigFlag;
     aEntry.mOtherConfigFlag          = mOtherConfigFlag;
-    aEntry.mStubRouterFlag           = mStubRouterFlag;
+    aEntry.mSnacRouterFlag           = mSnacRouterFlag;
     aEntry.mIsLocalDevice            = mIsLocalDevice;
     aEntry.mIsReachable              = IsReachable();
     aEntry.mIsPeerBr                 = IsPeerBr();
@@ -2168,7 +2157,7 @@ void RoutingManager::RxRaTracker::DecisionFactors::UpdateFlagsFrom(const Router 
     // stub router (e.g., another Thread BR) includes the `M` or `O`
     // flag, we also include the same flag.
 
-    VerifyOrExit(!aRouter.mStubRouterFlag);
+    VerifyOrExit(!aRouter.mSnacRouterFlag);
     VerifyOrExit(aRouter.IsReachable());
 
     if (aRouter.mManagedAddressConfigFlag)
@@ -2232,6 +2221,12 @@ bool RoutingManager::FavoredOmrPrefix::IsInfrastructureDerived(void) const
     return !IsEmpty() && (mPreference >= NetworkData::kRoutePreferenceMedium);
 }
 
+bool RoutingManager::FavoredOmrPrefix::operator==(const FavoredOmrPrefix &aOther) const
+{
+    return (mPreference == aOther.mPreference) && (mIsDomainPrefix == aOther.mIsDomainPrefix) &&
+           (mPrefix == aOther.mPrefix);
+}
+
 void RoutingManager::FavoredOmrPrefix::SetFrom(const NetworkData::OnMeshPrefixConfig &aOnMeshPrefixConfig)
 {
     mPrefix         = aOnMeshPrefixConfig.GetPrefix();
@@ -2284,22 +2279,41 @@ void RoutingManager::OmrPrefixManager::Init(const Ip6::Prefix &aBrUlaPrefix)
     LogInfo("Generated local OMR prefix: %s", mGeneratedPrefix.ToString().AsCString());
 }
 
-void RoutingManager::OmrPrefixManager::Start(void) { DetermineFavoredPrefix(); }
+void RoutingManager::OmrPrefixManager::Start(void)
+{
+    FavoredOmrPrefix favoredPrefix;
+
+    DetermineFavoredPrefixInNetData(favoredPrefix);
+    SetFavordPrefix(favoredPrefix);
+}
 
 void RoutingManager::OmrPrefixManager::Stop(void)
 {
     RemoveLocalFromNetData();
-    mFavoredPrefix.Clear();
+    ClearFavoredPrefix();
 }
 
-void RoutingManager::OmrPrefixManager::DetermineFavoredPrefix(void)
+void RoutingManager::OmrPrefixManager::SetFavordPrefix(const OmrPrefix &aOmrPrefix)
+{
+    FavoredOmrPrefix oldFavoredPrefix = mFavoredPrefix;
+
+    mFavoredPrefix.SetFrom(aOmrPrefix);
+
+    if (oldFavoredPrefix != mFavoredPrefix)
+    {
+        LogInfo("Favored OMR prefix: %s -> %s", FavoredToString(oldFavoredPrefix).AsCString(),
+                FavoredToString(mFavoredPrefix).AsCString());
+    }
+}
+
+void RoutingManager::OmrPrefixManager::DetermineFavoredPrefixInNetData(FavoredOmrPrefix &aFavoredPrefix)
 {
     // Determine the favored OMR prefix present in Network Data.
 
     NetworkData::Iterator           iterator = NetworkData::kIteratorInit;
     NetworkData::OnMeshPrefixConfig prefixConfig;
 
-    mFavoredPrefix.Clear();
+    aFavoredPrefix.Clear();
 
     while (Get<NetworkData::Leader>().GetNextOnMeshPrefix(iterator, prefixConfig) == kErrorNone)
     {
@@ -2308,18 +2322,20 @@ void RoutingManager::OmrPrefixManager::DetermineFavoredPrefix(void)
             continue;
         }
 
-        if (mFavoredPrefix.IsEmpty() || !mFavoredPrefix.IsFavoredOver(prefixConfig))
+        if (aFavoredPrefix.IsEmpty() || !aFavoredPrefix.IsFavoredOver(prefixConfig))
         {
-            mFavoredPrefix.SetFrom(prefixConfig);
+            aFavoredPrefix.SetFrom(prefixConfig);
         }
     }
 }
 
 void RoutingManager::OmrPrefixManager::Evaluate(void)
 {
+    FavoredOmrPrefix favoredPrefix;
+
     OT_ASSERT(Get<RoutingManager>().IsRunning());
 
-    DetermineFavoredPrefix();
+    DetermineFavoredPrefixInNetData(favoredPrefix);
 
     // Determine the local prefix and remove outdated prefix published by us.
 #if OPENTHREAD_CONFIG_BORDER_ROUTING_DHCP6_PD_ENABLE
@@ -2329,7 +2345,7 @@ void RoutingManager::OmrPrefixManager::Evaluate(void)
         {
             RemoveLocalFromNetData();
             mLocalPrefix.mPrefix         = Get<RoutingManager>().mPdPrefixManager.GetPrefix();
-            mLocalPrefix.mPreference     = RoutePreference::kRoutePreferenceMedium;
+            mLocalPrefix.mPreference     = PdPrefixManager::kPdRoutePreference;
             mLocalPrefix.mIsDomainPrefix = false;
             LogInfo("Setting local OMR prefix to PD prefix: %s", mLocalPrefix.GetPrefix().ToString().AsCString());
         }
@@ -2346,33 +2362,22 @@ void RoutingManager::OmrPrefixManager::Evaluate(void)
     }
 
     // Decide if we need to add or remove our local OMR prefix.
-    if (mFavoredPrefix.IsEmpty() || mFavoredPrefix.GetPreference() < mLocalPrefix.GetPreference())
+
+    if (favoredPrefix.IsEmpty() || favoredPrefix.GetPreference() < mLocalPrefix.GetPreference())
     {
-        if (mFavoredPrefix.IsEmpty())
-        {
-            LogInfo("No favored OMR prefix found in Thread network.");
-        }
-        else
-        {
-            LogInfo("Replacing favored OMR prefix %s with higher preference local prefix %s.",
-                    mFavoredPrefix.GetPrefix().ToString().AsCString(), mLocalPrefix.GetPrefix().ToString().AsCString());
-        }
-
-        // The `mFavoredPrefix` remains empty if we fail to publish
-        // the local OMR prefix.
         SuccessOrExit(AddLocalToNetData());
-
-        mFavoredPrefix.SetFrom(mLocalPrefix);
+        SetFavordPrefix(mLocalPrefix);
+        ExitNow();
     }
-    else if (mFavoredPrefix.GetPrefix() == mLocalPrefix.GetPrefix())
+
+    SetFavordPrefix(favoredPrefix);
+
+    if (favoredPrefix.GetPrefix() == mLocalPrefix.GetPrefix())
     {
         IgnoreError(AddLocalToNetData());
     }
     else if (mIsLocalAddedInNetData)
     {
-        LogInfo("There is already a favored OMR prefix %s in the Thread network",
-                mFavoredPrefix.GetPrefix().ToString().AsCString());
-
         RemoveLocalFromNetData();
     }
 
@@ -2485,6 +2490,36 @@ RoutingManager::OmrPrefixManager::InfoString RoutingManager::OmrPrefixManager::L
 
     string.Append("local OMR prefix %s (def-route:%s)", mLocalPrefix.GetPrefix().ToString().AsCString(),
                   ToYesNo(mDefaultRoute));
+    return string;
+}
+
+RoutingManager::OmrPrefixManager::InfoString RoutingManager::OmrPrefixManager::FavoredToString(
+    const FavoredOmrPrefix &aFavoredPrefix) const
+{
+    InfoString string;
+
+    if (aFavoredPrefix.IsEmpty())
+    {
+        string.Append("(none)");
+    }
+    else
+    {
+        string.Append("%s (prf:%s", aFavoredPrefix.GetPrefix().ToString().AsCString(),
+                      RoutePreferenceToString(aFavoredPrefix.GetPreference()));
+
+        if (aFavoredPrefix.IsDomainPrefix())
+        {
+            string.Append(", domain");
+        }
+
+        if (aFavoredPrefix.GetPrefix() == mLocalPrefix.GetPrefix())
+        {
+            string.Append(", local");
+        }
+
+        string.Append(")");
+    }
+
     return string;
 }
 
@@ -2638,6 +2673,17 @@ void RoutingManager::OnLinkPrefixManager::Stop(void)
         SetState(kDeprecating);
         break;
     }
+}
+
+bool RoutingManager::OnLinkPrefixManager::AddressMatchesLocalPrefix(const Ip6::Address &aAddress) const
+{
+    bool matches = false;
+
+    VerifyOrExit(GetState() != kIdle);
+    matches = aAddress.MatchesPrefix(mLocalPrefix);
+
+exit:
+    return matches;
 }
 
 void RoutingManager::OnLinkPrefixManager::Evaluate(void)
@@ -3014,10 +3060,14 @@ const char *RoutingManager::OnLinkPrefixManager::StateToString(State aState)
         "Deprecating", // (3) kDeprecating
     };
 
-    static_assert(0 == kIdle, "kIdle value is incorrect");
-    static_assert(1 == kPublishing, "kPublishing value is incorrect");
-    static_assert(2 == kAdvertising, "kAdvertising value is incorrect");
-    static_assert(3 == kDeprecating, "kDeprecating value is incorrect");
+    struct EnumCheck
+    {
+        InitEnumValidatorCounter();
+        ValidateNextEnum(kIdle);
+        ValidateNextEnum(kPublishing);
+        ValidateNextEnum(kAdvertising);
+        ValidateNextEnum(kDeprecating);
+    };
 
     return kStateStrings[aState];
 }
@@ -3497,9 +3547,13 @@ const char *RoutingManager::RoutePublisher::StateToString(State aState)
         "ula",       // (2) kPublishUla
     };
 
-    static_assert(0 == kDoNotPublish, "kDoNotPublish value is incorrect");
-    static_assert(1 == kPublishDefault, "kPublishDefault value is incorrect");
-    static_assert(2 == kPublishUla, "kPublishUla value is incorrect");
+    struct EnumCheck
+    {
+        InitEnumValidatorCounter();
+        ValidateNextEnum(kDoNotPublish);
+        ValidateNextEnum(kPublishDefault);
+        ValidateNextEnum(kPublishUla);
+    };
 
     return kStateStrings[aState];
 }
@@ -3820,11 +3874,20 @@ void RoutingManager::RsSender::Stop(void) { mTimer.Stop(); }
 Error RoutingManager::RsSender::SendRs(void)
 {
     Ip6::Address         destAddress;
-    RouterSolicitMessage routerSolicit;
+    RouterSolicitHeader  rsHdr;
+    TxMessage            rsMsg;
+    LinkLayerAddress     linkAddr;
     InfraIf::Icmp6Packet packet;
     Error                error;
 
-    packet.InitFrom(routerSolicit);
+    SuccessOrExit(error = rsMsg.Append(rsHdr));
+
+    if (Get<InfraIf>().GetLinkLayerAddress(linkAddr) == kErrorNone)
+    {
+        SuccessOrExit(error = rsMsg.AppendLinkLayerOption(linkAddr, Option::kSourceLinkLayerAddr));
+    }
+
+    rsMsg.GetAsPacket(packet);
     destAddress.SetToLinkLocalAllRoutersMulticast();
 
     error = Get<RoutingManager>().mInfraIf.Send(packet, destAddress);
@@ -3837,6 +3900,7 @@ Error RoutingManager::RsSender::SendRs(void)
     {
         Get<Ip6::Ip6>().GetBorderRoutingCounters().mRsTxFailure++;
     }
+exit:
     return error;
 }
 
@@ -3883,7 +3947,8 @@ exit:
 RoutingManager::PdPrefixManager::PdPrefixManager(Instance &aInstance)
     : InstanceLocator(aInstance)
     , mEnabled(false)
-    , mIsRunning(false)
+    , mIsStarted(false)
+    , mIsPaused(false)
     , mNumPlatformPioProcessed(0)
     , mNumPlatformRaReceived(0)
     , mLastPlatformRaTime(0)
@@ -3907,8 +3972,20 @@ void RoutingManager::PdPrefixManager::StartStop(bool aStart)
 {
     State oldState = GetState();
 
-    VerifyOrExit(aStart != mIsRunning);
-    mIsRunning = aStart;
+    VerifyOrExit(aStart != mIsStarted);
+    mIsStarted = aStart;
+    EvaluateStateChange(oldState);
+
+exit:
+    return;
+}
+
+void RoutingManager::PdPrefixManager::PauseResume(bool aPause)
+{
+    State oldState = GetState();
+
+    VerifyOrExit(aPause != mIsPaused);
+    mIsPaused = aPause;
     EvaluateStateChange(oldState);
 
 exit:
@@ -3921,10 +3998,18 @@ RoutingManager::PdPrefixManager::State RoutingManager::PdPrefixManager::GetState
 
     if (mEnabled)
     {
-        state = mIsRunning ? kDhcp6PdStateRunning : kDhcp6PdStateStopped;
+        state = mIsStarted ? (mIsPaused ? kDhcp6PdStateIdle : kDhcp6PdStateRunning) : kDhcp6PdStateStopped;
     }
 
     return state;
+}
+
+void RoutingManager::PdPrefixManager::Evaluate(void)
+{
+    const FavoredOmrPrefix &favoredPrefix = Get<RoutingManager>().mOmrPrefixManager.GetFavoredPrefix();
+    bool shouldPause = favoredPrefix.IsInfrastructureDerived() && (favoredPrefix.GetPrefix() != mPrefix.GetPrefix());
+
+    PauseResume(/* aPause */ shouldPause);
 }
 
 void RoutingManager::PdPrefixManager::EvaluateStateChange(Dhcp6PdState aOldState)
@@ -3938,13 +4023,18 @@ void RoutingManager::PdPrefixManager::EvaluateStateChange(Dhcp6PdState aOldState
     {
     case kDhcp6PdStateDisabled:
     case kDhcp6PdStateStopped:
+    case kDhcp6PdStateIdle:
         WithdrawPrefix();
         break;
     case kDhcp6PdStateRunning:
         break;
     }
 
-    mStateCallback.InvokeIfSet(static_cast<otBorderRoutingDhcp6PdState>(newState));
+    // When the prefix is replaced, there will be a short period when the old prefix is still in the netdata, and PD
+    // manager will refuse to request the prefix.
+    // TODO: Either update the comment for the state callback or add a random delay when notifing the upper layer for
+    // state change.
+    mStateCallback.InvokeIfSet(MapEnum(newState));
 
 exit:
     return;
@@ -4002,7 +4092,7 @@ void RoutingManager::PdPrefixManager::ProcessRa(const uint8_t *aRouterAdvert, co
     // part of the DHCPv6 prefix delegation process for distributing
     // prefixes to interfaces.
 
-    RouterAdvert::Icmp6Packet packet;
+    InfraIf::Icmp6Packet packet;
 
     packet.Init(aRouterAdvert, aLength);
     Process(&packet, nullptr);
@@ -4018,17 +4108,17 @@ void RoutingManager::PdPrefixManager::ProcessPrefix(const PrefixTableEntry &aPre
     Process(nullptr, &aPrefixTableEntry);
 }
 
-void RoutingManager::PdPrefixManager::Process(const RouterAdvert::Icmp6Packet *aRaPacket,
-                                              const PrefixTableEntry          *aPrefixTableEntry)
+void RoutingManager::PdPrefixManager::Process(const InfraIf::Icmp6Packet *aRaPacket,
+                                              const PrefixTableEntry     *aPrefixTableEntry)
 {
     // Processes DHCPv6 Prefix Delegation (PD) prefixes, either from
     // an RA message or directly set. Requires either `aRaPacket` or
     // `aPrefixTableEntry` to be non-null.
 
-    bool        currentPrefixUpdated = false;
-    Error       error                = kErrorNone;
-    PrefixEntry favoredEntry;
-    PrefixEntry entry;
+    bool     currentPrefixUpdated = false;
+    Error    error                = kErrorNone;
+    PdPrefix favoredPrefix;
+    PdPrefix prefix;
 
     VerifyOrExit(mEnabled, error = kErrorInvalidState);
 
@@ -4046,8 +4136,8 @@ void RoutingManager::PdPrefixManager::Process(const RouterAdvert::Icmp6Packet *a
             }
 
             mNumPlatformPioProcessed++;
-            entry.SetFrom(static_cast<const PrefixInfoOption &>(option));
-            currentPrefixUpdated |= ProcessPrefixEntry(entry, favoredEntry);
+            prefix.SetFrom(static_cast<const PrefixInfoOption &>(option));
+            currentPrefixUpdated |= ProcessPdPrefix(prefix, favoredPrefix);
         }
 
         mNumPlatformRaReceived++;
@@ -4055,8 +4145,8 @@ void RoutingManager::PdPrefixManager::Process(const RouterAdvert::Icmp6Packet *a
     }
     else // aPrefixTableEntry != nullptr
     {
-        entry.SetFrom(*aPrefixTableEntry);
-        currentPrefixUpdated = ProcessPrefixEntry(entry, favoredEntry);
+        prefix.SetFrom(*aPrefixTableEntry);
+        currentPrefixUpdated = ProcessPdPrefix(prefix, favoredPrefix);
     }
 
     if (currentPrefixUpdated && mPrefix.IsDeprecated())
@@ -4066,15 +4156,15 @@ void RoutingManager::PdPrefixManager::Process(const RouterAdvert::Icmp6Packet *a
         Get<RoutingManager>().ScheduleRoutingPolicyEvaluation(kImmediately);
     }
 
-    if (favoredEntry.IsFavoredOver(mPrefix))
+    if (favoredPrefix.IsFavoredOver(mPrefix))
     {
-        mPrefix              = favoredEntry;
+        mPrefix              = favoredPrefix;
         currentPrefixUpdated = true;
         LogInfo("DHCPv6 PD prefix set to %s", mPrefix.GetPrefix().ToString().AsCString());
         Get<RoutingManager>().ScheduleRoutingPolicyEvaluation(kImmediately);
     }
 
-    if (HasPrefix() && currentPrefixUpdated)
+    if (HasPrefix())
     {
         mTimer.FireAt(mPrefix.GetDeprecationTime());
     }
@@ -4088,45 +4178,45 @@ exit:
     OT_UNUSED_VARIABLE(error);
 }
 
-bool RoutingManager::PdPrefixManager::ProcessPrefixEntry(PrefixEntry &aEntry, PrefixEntry &aFavoredEntry)
+bool RoutingManager::PdPrefixManager::ProcessPdPrefix(PdPrefix &aPrefix, PdPrefix &aFavoredPrefix)
 {
     bool currentPrefixUpdated = false;
 
-    if (!aEntry.IsValidPdPrefix())
+    if (!aPrefix.IsValidPdPrefix())
     {
-        LogWarn("Ignore invalid DHCPv6 PD prefix %s", aEntry.GetPrefix().ToString().AsCString());
+        LogWarn("Ignore invalid DHCPv6 PD prefix %s", aPrefix.GetPrefix().ToString().AsCString());
         ExitNow();
     }
 
-    aEntry.GetPrefix().Tidy();
-    aEntry.GetPrefix().SetLength(kOmrPrefixLength);
+    aPrefix.GetPrefix().Tidy();
+    aPrefix.GetPrefix().SetLength(kOmrPrefixLength);
 
     // Check if there is an update to the current prefix. The valid or
     // preferred lifetime may have changed.
 
-    if (HasPrefix() && (mPrefix.GetPrefix() == aEntry.GetPrefix()))
+    if (HasPrefix() && (mPrefix.GetPrefix() == aPrefix.GetPrefix()))
     {
         currentPrefixUpdated = true;
-        mPrefix              = aEntry;
+        mPrefix              = aPrefix;
     }
 
-    VerifyOrExit(!aEntry.IsDeprecated());
+    VerifyOrExit(!aPrefix.IsDeprecated());
 
     // Some platforms may delegate multiple prefixes. We'll select the
     // smallest one, as GUA prefixes (`2000::/3`) are inherently
     // smaller than ULA prefixes (`fc00::/7`). This rule prefers GUA
     // prefixes over ULA.
 
-    if (aEntry.IsFavoredOver(aFavoredEntry))
+    if (aPrefix.IsFavoredOver(aFavoredPrefix))
     {
-        aFavoredEntry = aEntry;
+        aFavoredPrefix = aPrefix;
     }
 
 exit:
     return currentPrefixUpdated;
 }
 
-bool RoutingManager::PdPrefixManager::PrefixEntry::IsValidPdPrefix(void) const
+bool RoutingManager::PdPrefixManager::PdPrefix::IsValidPdPrefix(void) const
 {
     // We should accept ULA prefix since it could be used by the internet infrastructure like NAT64.
 
@@ -4134,7 +4224,7 @@ bool RoutingManager::PdPrefixManager::PrefixEntry::IsValidPdPrefix(void) const
            !GetPrefix().IsMulticast();
 }
 
-bool RoutingManager::PdPrefixManager::PrefixEntry::IsFavoredOver(const PrefixEntry &aOther) const
+bool RoutingManager::PdPrefixManager::PdPrefix::IsFavoredOver(const PdPrefix &aOther) const
 {
     bool isFavored;
 
@@ -4167,11 +4257,17 @@ const char *RoutingManager::PdPrefixManager::StateToString(State aState)
         "Disabled", // (0) kDisabled
         "Stopped",  // (1) kStopped
         "Running",  // (2) kRunning
+        "Idle",     // (3) kIdle
     };
 
-    static_assert(0 == kDhcp6PdStateDisabled, "kDhcp6PdStateDisabled value is incorrect");
-    static_assert(1 == kDhcp6PdStateStopped, "kDhcp6PdStateStopped value is incorrect");
-    static_assert(2 == kDhcp6PdStateRunning, "kDhcp6PdStateRunning value is incorrect");
+    struct EnumCheck
+    {
+        InitEnumValidatorCounter();
+        ValidateNextEnum(kDhcp6PdStateDisabled);
+        ValidateNextEnum(kDhcp6PdStateStopped);
+        ValidateNextEnum(kDhcp6PdStateRunning);
+        ValidateNextEnum(kDhcp6PdStateIdle);
+    };
 
     return kStateStrings[aState];
 }

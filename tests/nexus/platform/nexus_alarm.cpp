@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2016, The OpenThread Authors.
+ *  Copyright (c) 2024, The OpenThread Authors.
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -26,68 +26,35 @@
  *  POSSIBILITY OF SUCH DAMAGE.
  */
 
-/**
- * @file
- *   This file includes definitions for CRC16 computations.
- */
+#include <openthread/platform/alarm-milli.h>
 
-#ifndef CRC16_HPP_
-#define CRC16_HPP_
-
-#include "openthread-core-config.h"
-
-#include <stdint.h>
+#include "nexus_alarm.hpp"
+#include "nexus_core.hpp"
+#include "nexus_node.hpp"
 
 namespace ot {
+namespace Nexus {
 
-/**
- * Implements CRC16 computations.
- *
- */
-class Crc16
+//---------------------------------------------------------------------------------------------------------------------
+// otPlatAlarmMilli APIs
+
+extern "C" {
+
+uint32_t otPlatAlarmMilliGetNow(void) { return Core::Get().GetNow().GetValue(); }
+
+void otPlatAlarmMilliStartAt(otInstance *aInstance, uint32_t aT0, uint32_t aDt)
 {
-public:
-    enum Polynomial : uint16_t
-    {
-        kCcitt = 0x1021, ///< CRC16_CCITT
-        kAnsi  = 0x8005, ///< CRC16-ANSI
-    };
+    Alarm &alarm = AsNode(aInstance).mAlarm;
 
-    /**
-     * Initializes the object.
-     *
-     * @param[in]  aPolynomial  The polynomial value.
-     *
-     */
-    explicit Crc16(Polynomial aPolynomial);
+    alarm.mScheduled = true;
+    alarm.mAlarmTime.SetValue(aT0 + aDt);
 
-    /**
-     * Initializes the CRC16 computation.
-     *
-     */
-    void Init(void) { mCrc = 0; }
+    Core::Get().UpdateNextAlarmTime(alarm);
+}
 
-    /*c*
-     * Feeds a byte value into the CRC16 computation.
-     *
-     * @param[in]  aByte  The byte value.
-     *
-     */
-    void Update(uint8_t aByte);
+void otPlatAlarmMilliStop(otInstance *aInstance) { AsNode(aInstance).mAlarm.mScheduled = false; }
 
-    /**
-     * Gets the current CRC16 value.
-     *
-     * @returns The current CRC16 value.
-     *
-     */
-    uint16_t Get(void) const { return mCrc; }
+} // extern "C"
 
-private:
-    uint16_t mPolynomial;
-    uint16_t mCrc;
-};
-
+} // namespace Nexus
 } // namespace ot
-
-#endif // CRC16_HPP_
