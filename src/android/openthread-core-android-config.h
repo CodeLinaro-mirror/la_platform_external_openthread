@@ -357,4 +357,7 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 // earlier
 #define OPENTHREAD_CONFIG_SRP_SERVER_FAST_START_MODE_ENABLE 1
 
+// Enables setting vendor info to network diagnostic
+#define OPENTHREAD_CONFIG_NET_DIAG_VENDOR_INFO_SET_API_ENABLE 1
+
 #endif // OPENTHREAD_CORE_ANDROID_CONFIG_H_
