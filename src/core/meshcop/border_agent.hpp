@@ -40,6 +40,8 @@
 
 #include <openthread/border_agent.h>
 
+#include "border_router/routing_manager.hpp"
+#include "common/appender.hpp"
 #include "common/as_core_type.hpp"
 #include "common/heap_allocatable.hpp"
 #include "common/linked_list.hpp"
@@ -50,6 +52,7 @@
 #include "common/tasklet.hpp"
 #include "meshcop/dataset.hpp"
 #include "meshcop/secure_transport.hpp"
+#include "net/dns_types.hpp"
 #include "net/socket.hpp"
 #include "net/udp6.hpp"
 #include "thread/tmf.hpp"
@@ -69,6 +72,9 @@ namespace MeshCoP {
 
 class BorderAgent : public InstanceLocator, private NonCopyable
 {
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+    friend class ot::BorderRouter::RoutingManager;
+#endif
     friend class ot::Notifier;
     friend class Tmf::Agent;
 
@@ -161,16 +167,34 @@ public:
      */
     bool IsRunning(void) const { return mIsRunning; }
 
+    typedef otBorderAgentMeshCoPServiceChangedCallback MeshCoPServiceChangedCallback;
+
     /**
-     * Disconnects the Border Agent from any active secure sessions.
+     * Sets the callback function used by the Border Agent to notify any changes on the MeshCoP service TXT values.
      *
-     * If Border Agent is connected to a commissioner candidate with ephemeral key, calling this API
-     * will cause the ephemeral key to be cleared after the session is disconnected.
+     * The callback is invoked when the state of MeshCoP service TXT values changes. For example, it is
+     * invoked when the network name or the extended PAN ID changes and pass the updated encoded TXT data to the
+     * application layer.
      *
-     * The Border Agent state may not change immediately upon calling this method, the state will be
-     * updated when the connection update is notified by `HandleConnected()`.
+     * This callback is invoked once right after this API is called to provide initial states of the MeshCoP
+     * service to the application.
+     *
+     * @param[in] aCallback  The callback to invoke when there are any changes of the MeshCoP service.
+     * @param[in] aContext   A pointer to application-specific context.
      */
-    void Disconnect(void);
+    void SetMeshCoPServiceChangedCallback(MeshCoPServiceChangedCallback aCallback, void *aContext);
+
+    typedef otBorderAgentMeshCoPServiceTxtData MeshCoPServiceTxtData;
+
+    /**
+     * Gets the MeshCoP service TXT data.
+     *
+     * @param[out] aTxtData   A reference to a MeshCoP Service TXT data struct to get the data.
+     *
+     * @retval kErrorNone     If successfully retrieved the Border Agent MeshCoP Service TXT data.
+     * @retval kErrorNoBufs   If the buffer in @p aTxtData doesn't have enough size.
+     */
+    Error GetMeshCoPServiceTxtData(MeshCoPServiceTxtData &aTxtData) const;
 
 #if OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE
     /**
@@ -414,6 +438,108 @@ private:
         uint64_t                   mAllocationTime;
     };
 
+    class MeshCoPTxtEncoder : public InstanceLocator
+    {
+    public:
+        MeshCoPTxtEncoder(Instance &aInstance, MeshCoPServiceTxtData &aTxtData)
+            : InstanceLocator(aInstance)
+            , mTxtData(aTxtData)
+            , mAppender(mTxtData.mData, sizeof(mTxtData.mData))
+        {
+        }
+
+        enum : uint8_t
+        {
+            kConnectionModeDisabled = 0,
+            kConnectionModePskc     = 1,
+            kConnectionModePskd     = 2,
+            kConnectionModeVendor   = 3,
+            kConnectionModeX509     = 4,
+        };
+
+        enum : uint8_t
+        {
+            kThreadIfStatusNotInitialized = 0,
+            kThreadIfStatusInitialized    = 1,
+            kThreadIfStatusActive         = 2,
+        };
+
+        enum : uint8_t
+        {
+            kThreadRoleDisabledOrDetached = 0,
+            kThreadRoleChild              = 1,
+            kThreadRoleRouter             = 2,
+            kThreadRoleLeader             = 3,
+        };
+
+        enum : uint8_t
+        {
+            kAvailabilityInfrequent = 0,
+            kAvailabilityHigh       = 1,
+        };
+
+        struct StateBitmap
+        {
+            uint32_t mConnectionMode : 3;
+            uint32_t mThreadIfStatus : 2;
+            uint32_t mAvailability : 2;
+            uint32_t mBbrIsActive : 1;
+            uint32_t mBbrIsPrimary : 1;
+            uint32_t mThreadRole : 2;
+            uint32_t mEpskcSupported : 1;
+
+            StateBitmap(void)
+                : mConnectionMode(0)
+                , mThreadIfStatus(0)
+                , mAvailability(0)
+                , mBbrIsActive(0)
+                , mBbrIsPrimary(0)
+                , mThreadRole(kThreadRoleDisabledOrDetached)
+                , mEpskcSupported(0)
+            {
+            }
+
+            uint32_t ToUint32(void) const
+            {
+                uint32_t bitmap = 0;
+
+                bitmap |= mConnectionMode << 0;
+                bitmap |= mThreadIfStatus << 3;
+                bitmap |= mAvailability << 5;
+                bitmap |= mBbrIsActive << 7;
+                bitmap |= mBbrIsPrimary << 8;
+                bitmap |= mThreadRole << 9;
+                bitmap |= mEpskcSupported << 11;
+                return bitmap;
+            }
+        };
+
+        Error EncodeTxtData(void);
+
+    private:
+        Error AppendTxtEntry(const char *aKey, const void *aValue, uint16_t aValueLength);
+
+        template <typename ObjectType> Error AppendTxtEntry(const char *aKey, const ObjectType &aObject)
+        {
+            static_assert(!TypeTraits::IsPointer<ObjectType>::kValue, "ObjectType must not be a pointer");
+            static_assert(!TypeTraits::IsSame<ObjectType, NameData>::kValue, "ObjectType must not be `NameData`");
+
+            return AppendTxtEntry(aKey, &aObject, sizeof(ObjectType));
+        }
+
+#if OPENTHREAD_FTD && OPENTHREAD_CONFIG_BACKBONE_ROUTER_ENABLE
+        Error AppendBbrTxtEntry(StateBitmap aState);
+#endif
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+        Error AppendOmrTxtEntry(void);
+#endif
+
+        StateBitmap GetStateBitmap(void);
+
+        MeshCoPServiceTxtData &mTxtData;
+        Appender               mAppender;
+    };
+
     void Start(void);
     void Stop(void);
     void HandleNotifierEvents(Events aEvents);
@@ -432,12 +558,19 @@ private:
 
     static Coap::Message::Code CoapCodeFromError(Error aError);
 
+    void PostNotifyMeshCoPServiceChangedTask(void);
+    void NotifyMeshCoPServiceChanged(void);
+
+    using NotifyMeshCoPServiceChangedTask = TaskletIn<BorderAgent, &BorderAgent::NotifyMeshCoPServiceChanged>;
+
     bool            mIsRunning;
     Dtls::Transport mDtlsTransport;
 #if OPENTHREAD_CONFIG_BORDER_AGENT_ID_ENABLE
     Id   mId;
     bool mIdInitialized;
 #endif
+    Callback<MeshCoPServiceChangedCallback> mMeshCoPServiceChangedCallback;
+    NotifyMeshCoPServiceChangedTask         mNotifyMeshCoPServiceChangedTask;
 #if OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE
     EphemeralKeyManager mEphemeralKeyManager;
 #endif
