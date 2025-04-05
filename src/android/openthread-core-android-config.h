@@ -133,16 +133,6 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 #define OPENTHREAD_CONFIG_MLE_IP_ADDRS_PER_CHILD 6
 
 /**
- * @def OPENTHREAD_CONFIG_MLE_SEND_LINK_REQUEST_ON_ADV_TIMEOUT
- *
- * Define to 1 to send an MLE Link Request when MAX_NEIGHBOR_AGE is reached for a neighboring router.
- *
- * This is enabled to increase reliability of exchanges between routers (default on OpenThread is disabled).
- *
- */
-#define OPENTHREAD_CONFIG_MLE_SEND_LINK_REQUEST_ON_ADV_TIMEOUT 1
-
-/**
  * @def OPENTHREAD_CONFIG_MAX_STATECHANGE_HANDLERS
  *
  * The maximum number of state-changed callback handlers (set using `otSetStateChangedCallback()`).
@@ -362,5 +352,12 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 
 // Sets microseconds ahead should MAC deliver CSL frame to SubMac.
 #define OPENTHREAD_CONFIG_MAC_CSL_REQUEST_AHEAD_US 4000
+
+// Enables the SRP server "Fast Start Mode" feature for mobile phone to receive SRP registrations
+// earlier
+#define OPENTHREAD_CONFIG_SRP_SERVER_FAST_START_MODE_ENABLE 1
+
+// Enables setting vendor info to network diagnostic
+#define OPENTHREAD_CONFIG_NET_DIAG_VENDOR_INFO_SET_API_ENABLE 1
 
 #endif // OPENTHREAD_CORE_ANDROID_CONFIG_H_

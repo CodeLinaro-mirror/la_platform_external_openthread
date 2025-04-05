@@ -40,14 +40,20 @@
 
 #include <openthread/border_agent.h>
 
+#include "border_router/routing_manager.hpp"
+#include "common/appender.hpp"
 #include "common/as_core_type.hpp"
 #include "common/heap_allocatable.hpp"
+#include "common/linked_list.hpp"
 #include "common/locator.hpp"
 #include "common/non_copyable.hpp"
 #include "common/notifier.hpp"
+#include "common/owned_ptr.hpp"
 #include "common/tasklet.hpp"
 #include "meshcop/dataset.hpp"
 #include "meshcop/secure_transport.hpp"
+#include "net/dns_types.hpp"
+#include "net/socket.hpp"
 #include "net/udp6.hpp"
 #include "thread/tmf.hpp"
 #include "thread/uri_paths.hpp"
@@ -56,56 +62,63 @@ namespace ot {
 
 namespace MeshCoP {
 
+#if !OPENTHREAD_CONFIG_SECURE_TRANSPORT_ENABLE
+#error "Border Agent feature requires `OPENTHREAD_CONFIG_SECURE_TRANSPORT_ENABLE`"
+#endif
+
+#if !OPENTHREAD_CONFIG_UPTIME_ENABLE
+#error "Border Agent feature requires `OPENTHREAD_CONFIG_UPTIME_ENABLE`"
+#endif
+
 class BorderAgent : public InstanceLocator, private NonCopyable
 {
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+    friend class ot::BorderRouter::RoutingManager;
+#endif
     friend class ot::Notifier;
     friend class Tmf::Agent;
-    friend class Tmf::SecureAgent;
+
+    class CoapDtlsSession;
 
 public:
-    /**
-     * Minimum length of the ephemeral key string.
-     *
-     */
-    static constexpr uint16_t kMinEphemeralKeyLength = OT_BORDER_AGENT_MIN_EPHEMERAL_KEY_LENGTH;
+    typedef otBorderAgentId          Id;          ///< Border Agent ID.
+    typedef otBorderAgentCounters    Counters;    ///< Border Agent Counters.
+    typedef otBorderAgentSessionInfo SessionInfo; ///< A session info.
 
     /**
-     * Maximum length of the ephemeral key string.
-     *
+     * Represents an iterator for secure sessions.
      */
-    static constexpr uint16_t kMaxEphemeralKeyLength = OT_BORDER_AGENT_MAX_EPHEMERAL_KEY_LENGTH;
-
-    /**
-     * Default ephemeral key timeout interval in milliseconds.
-     *
-     */
-    static constexpr uint32_t kDefaultEphemeralKeyTimeout = OT_BORDER_AGENT_DEFAULT_EPHEMERAL_KEY_TIMEOUT;
-
-    /**
-     * Maximum ephemeral key timeout interval in milliseconds.
-     *
-     */
-    static constexpr uint32_t kMaxEphemeralKeyTimeout = OT_BORDER_AGENT_MAX_EPHEMERAL_KEY_TIMEOUT;
-
-    typedef otBorderAgentId Id; ///< Border Agent ID.
-
-    /**
-     * Defines the Border Agent state.
-     *
-     */
-    enum State : uint8_t
+    class SessionIterator : public otBorderAgentSessionIterator
     {
-        kStateStopped,   ///< Stopped/disabled.
-        kStateStarted,   ///< Started and listening for connections.
-        kStateConnected, ///< Connected to an external commissioner candidate, petition pending.
-        kStateAccepted,  ///< Connected to and accepted an external commissioner.
+    public:
+        /**
+         * Initializes the `SessionIterator`.
+         *
+         * @param[in] aInstance  The OpenThread instance.
+         */
+        void Init(Instance &aInstance);
+
+        /**
+         * Retrieves the next session information.
+         *
+         * @param[out] aSessionInfo     A `SessionInfo` to populate.
+         *
+         * @retval kErrorNone        Successfully retrieved the next session. @p aSessionInfo is updated.
+         * @retval kErrorNotFound    No more sessions are available. The end of the list has been reached.
+         */
+        Error GetNextSessionInfo(SessionInfo &aSessionInfo);
+
+    private:
+        CoapDtlsSession *GetSession(void) const { return static_cast<CoapDtlsSession *>(mPtr); }
+        void             SetSession(CoapDtlsSession *aSession) { mPtr = aSession; }
+        uint64_t         GetInitTime(void) const { return mData; }
+        void             SetInitTime(uint64_t aInitTime) { mData = aInitTime; }
     };
 
     /**
      * Initializes the `BorderAgent` object.
      *
      * @param[in]  aInstance     A reference to the OpenThread instance.
-     *
      */
     explicit BorderAgent(Instance &aInstance);
 
@@ -121,7 +134,6 @@ public:
      *
      * @retval kErrorNone  If successfully retrieved the Border Agent ID.
      * @retval ...         If failed to retrieve the Border Agent ID.
-     *
      */
     Error GetId(Id &aId);
 
@@ -136,7 +148,6 @@ public:
      *
      * @retval kErrorNone  If successfully set the Border Agent ID.
      * @retval ...         If failed to set the Border Agent ID.
-     *
      */
     Error SetId(const Id &aId);
 #endif
@@ -145,107 +156,206 @@ public:
      * Gets the UDP port of this service.
      *
      * @returns  UDP port number.
-     *
      */
     uint16_t GetUdpPort(void) const;
 
     /**
-     * Starts the Border Agent service.
+     * Indicates whether the Border Agent service is running.
      *
+     * @retval TRUE  Border Agent service is running.
+     * @retval FALSE Border Agent service is not running.
      */
-    void Start(void) { IgnoreError(Start(kUdpPort)); }
+    bool IsRunning(void) const { return mIsRunning; }
+
+    typedef otBorderAgentMeshCoPServiceChangedCallback MeshCoPServiceChangedCallback;
 
     /**
-     * Stops the Border Agent service.
+     * Sets the callback function used by the Border Agent to notify any changes on the MeshCoP service TXT values.
      *
+     * The callback is invoked when the state of MeshCoP service TXT values changes. For example, it is
+     * invoked when the network name or the extended PAN ID changes and pass the updated encoded TXT data to the
+     * application layer.
+     *
+     * This callback is invoked once right after this API is called to provide initial states of the MeshCoP
+     * service to the application.
+     *
+     * @param[in] aCallback  The callback to invoke when there are any changes of the MeshCoP service.
+     * @param[in] aContext   A pointer to application-specific context.
      */
-    void Stop(void);
+    void SetMeshCoPServiceChangedCallback(MeshCoPServiceChangedCallback aCallback, void *aContext);
+
+    typedef otBorderAgentMeshCoPServiceTxtData MeshCoPServiceTxtData;
 
     /**
-     * Gets the state of the Border Agent service.
+     * Gets the MeshCoP service TXT data.
      *
-     * @returns The state of the Border Agent service.
+     * @param[out] aTxtData   A reference to a MeshCoP Service TXT data struct to get the data.
      *
+     * @retval kErrorNone     If successfully retrieved the Border Agent MeshCoP Service TXT data.
+     * @retval kErrorNoBufs   If the buffer in @p aTxtData doesn't have enough size.
      */
-    State GetState(void) const { return mState; }
-
-    /**
-     * Disconnects the Border Agent from any active secure sessions.
-     *
-     * If Border Agent is connected to a commissioner candidate with ephemeral key, calling this API
-     * will cause the ephemeral key to be cleared after the session is disconnected.
-     *
-     * The Border Agent state may not change immediately upon calling this method, the state will be
-     * updated when the connection update is notified by `HandleConnected()`.
-     */
-    void Disconnect(void);
+    Error GetMeshCoPServiceTxtData(MeshCoPServiceTxtData &aTxtData) const;
 
 #if OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE
     /**
-     * Sets the ephemeral key for a given timeout duration.
-     *
-     * The ephemeral key can be set when the Border Agent is already running and is not currently connected to any
-     * external commissioner (i.e., it is in `kStateStarted` state).
-     *
-     * The given @p aKeyString is directly used as the ephemeral PSK (excluding the trailing null `\0` character). Its
-     * length must be between `kMinEphemeralKeyLength` and `kMaxEphemeralKeyLength`, inclusive.
-     *
-     * Setting the ephemeral key again before a previously set one is timed out will replace the previous one and will
-     * reset the timeout.
-     *
-     * During the timeout interval, the ephemeral key can be used only once by an external commissioner to establish a
-     * connection. After the commissioner disconnects, the ephemeral key is cleared, and the Border Agent reverts to
-     * using PSKc. If the timeout expires while a commissioner is still connected, the session will be terminated, and
-     * the Border Agent will cease using the ephemeral key and revert to PSKc.
-     *
-     * @param[in] aKeyString   The ephemeral key.
-     * @param[in] aTimeout     The timeout duration in milliseconds to use the ephemeral key.
-     *                         If zero, the default `kDefaultEphemeralKeyTimeout` value will be used.
-     *                         If the timeout value is larger than `kMaxEphemeralKeyTimeout`, the max value will be
-     *                         used instead.
-     * @param[in] aUdpPort     The UDP port to use with ephemeral key. If UDP port is zero, an ephemeral port will be
-     *                         used. `GetUdpPort()` will return the current UDP port being used.
-     *
-     * @retval kErrorNone           Successfully set the ephemeral key.
-     * @retval kErrorInvalidState   Agent is not running or connected to external commissioner.
-     * @retval kErrorInvalidArgs    The given @p aKeyString is not valid.
-     * @retval kErrorFailed         Failed to set the key (e.g., could not bind to UDP port).
-     *
+     * Manages the ephemeral key use by Border Agent.
      */
-    Error SetEphemeralKey(const char *aKeyString, uint32_t aTimeout, uint16_t aUdpPort);
-
-    /**
-     * Cancels the ephemeral key in use if any.
-     *
-     * Can be used to cancel a previously set ephemeral key before it times out. If the Border Agent is not running or
-     * there is no ephemeral key in use, calling this function has no effect.
-     *
-     * If a commissioner is connected using the ephemeral key and is currently active, calling this method does not
-     * change its state. In this case the `IsEphemeralKeyActive()` will continue to return `true` until the commissioner
-     * disconnects, or the ephemeral key timeout expires.
-     */
-    void ClearEphemeralKey(void);
-
-    /**
-     * Indicates whether or not an ephemeral key is currently active.
-     *
-     * @retval TRUE    An ephemeral key is active.
-     * @retval FALSE   No ephemeral key is active.
-     *
-     */
-    bool IsEphemeralKeyActive(void) const { return mUsingEphemeralKey; }
-
-    /**
-     * Callback function pointer to notify when there is any changes related to use of ephemeral key by Border Agent.
-     *
-     *
-     */
-    typedef otBorderAgentEphemeralKeyCallback EphemeralKeyCallback;
-
-    void SetEphemeralKeyCallback(EphemeralKeyCallback aCallback, void *aContext)
+    class EphemeralKeyManager : public InstanceLocator, private NonCopyable
     {
-        mEphemeralKeyCallback.Set(aCallback, aContext);
-    }
+        friend class BorderAgent;
+
+    public:
+        static constexpr uint16_t kMinKeyLength   = OT_BORDER_AGENT_MIN_EPHEMERAL_KEY_LENGTH;      ///< Min key len.
+        static constexpr uint16_t kMaxKeyLength   = OT_BORDER_AGENT_MAX_EPHEMERAL_KEY_LENGTH;      ///< Max key len.
+        static constexpr uint32_t kDefaultTimeout = OT_BORDER_AGENT_DEFAULT_EPHEMERAL_KEY_TIMEOUT; //< Default timeout.
+        static constexpr uint32_t kMaxTimeout     = OT_BORDER_AGENT_MAX_EPHEMERAL_KEY_TIMEOUT;     ///< Max timeout.
+
+        typedef otBorderAgentEphemeralKeyCallback CallbackHandler; ///< Callback function pointer.
+
+        /**
+         * Represents the state of the `EphemeralKeyManager`.
+         */
+        enum State : uint8_t
+        {
+            kStateDisabled  = OT_BORDER_AGENT_STATE_DISABLED,  ///< Ephemeral key feature is disabled.
+            kStateStopped   = OT_BORDER_AGENT_STATE_STOPPED,   ///< Enabled, but the key is not set and started.
+            kStateStarted   = OT_BORDER_AGENT_STATE_STARTED,   ///< Key is set and listening to accept connection.
+            kStateConnected = OT_BORDER_AGENT_STATE_CONNECTED, ///< Session connected, not full commissioner.
+            kStateAccepted  = OT_BORDER_AGENT_STATE_ACCEPTED,  ///< Session connected and accepted as full commissioner.
+        };
+
+        /**
+         * Enables/disables Ephemeral Key Manager.
+         *
+         * If this method is called to disable, while an an ephemeral key is in use, the ephemeral key use will
+         * be stopped (as if `Stop()` is called).
+         *
+         * @param[in] aEnabled  Whether to enable or disable.
+         */
+        void SetEnabled(bool aEnabled);
+
+        /**
+         * Starts using an ephemeral key for a given timeout duration.
+         *
+         * An ephemeral key can only be set when `GetState()` is `kStateStopped`. Otherwise, `kErrorInvalidState` is
+         * returned. This means that setting the ephemeral key again while a previously set key is still in use will
+         * fail. Callers can stop the previous key by calling `Stop()` before starting with a new key.
+         *
+         * The given @p aKeyString is used directly as the ephemeral PSK (excluding the trailing null `\0` character).
+         * Its length must be between `kMinKeyLength` and `kMaxKeyLength`, inclusive.
+         *
+         * The ephemeral key can be used only once by an external commissioner candidate to establish a secure session.
+         * After the commissioner candidate disconnects, the use of the ephemeral key is stopped. If the timeout
+         * expires, the use of the ephemeral key is also stopped, and any established session using the key is
+         * immediately disconnected.
+         *
+         * @param[in] aKeyString   The ephemeral key.
+         * @param[in] aTimeout     The timeout duration, in milliseconds, to use the ephemeral key.
+         *                         If zero, the default `kDefaultTimeout` value is used. If the timeout value is
+         *                         larger than `kMaxTimeout`, the maximum value is used instead.
+         * @param[in] aUdpPort     The UDP port to use with the ephemeral key. If the UDP port is zero, an ephemeral
+         *                         port is used. `GetUdpPort()` returns the current UDP port being used.
+         *
+         * @retval kErrorNone           Successfully started using the ephemeral key.
+         * @retval kErrorInvalidState   A previously set ephemeral key is still in use or feature is disabled.
+         * @retval kErrorInvalidArgs    The given @p aKeyString is not valid.
+         * @retval kErrorFailed         Failed to start (e.g., it could not bind to the given UDP port).
+         */
+        Error Start(const char *aKeyString, uint32_t aTimeout, uint16_t aUdpPort);
+
+        /**
+         * Stops the ephemeral key use and disconnects any established secure session using it.
+         *
+         * If there is no ephemeral key in use, calling this method has no effect.
+         */
+        void Stop(void);
+
+        /**
+         * Gets the state of ephemeral key use and its session.
+         *
+         * @returns The `EmpheralKeyManager` state.
+         */
+        State GetState(void) const { return mState; }
+
+        /**
+         * Gets the UDP port used by ephemeral key DTLS secure transport.
+         *
+         * @returns  UDP port number.
+         */
+        uint16_t GetUdpPort(void) const { return mDtlsTransport.GetUdpPort(); }
+
+        /**
+         * Sets the callback.
+         *
+         * @param[in] aCallback   The callback function pointer.
+         * @param[in] aContext    The context associated and used with callback handler.
+         */
+        void SetCallback(CallbackHandler aCallback, void *aContext) { mCallback.Set(aCallback, aContext); }
+
+        /**
+         * Converts a given `State` to human-readable string.
+         *
+         * @param[in] aState  The state to convert.
+         *
+         * @returns The string corresponding to @p aState.
+         */
+        static const char *StateToString(State aState);
+
+    private:
+        static constexpr uint16_t kMaxConnectionAttempts = 10;
+
+        static_assert(kMaxKeyLength <= Dtls::Transport::kPskMaxLength, "Max e-key len is larger than max PSK len");
+
+        enum StopReason : uint8_t
+        {
+            kReasonLocalDisconnect,
+            kReasonPeerDisconnect,
+            kReasonSessionError,
+            kReasonMaxFailedAttempts,
+            kReasonTimeout,
+            kReasonUnknown,
+        };
+
+        explicit EphemeralKeyManager(Instance &aInstance);
+
+        void SetState(State aState);
+        void Stop(StopReason aReason);
+        void HandleTimer(void);
+        void HandleTask(void);
+        bool OwnsSession(CoapDtlsSession &aSession) const { return mCoapDtlsSession == &aSession; }
+        void HandleSessionConnected(void);
+        void HandleSessionDisconnected(SecureSession::ConnectEvent aEvent);
+        void HandleCommissionerPetitionAccepted(void);
+
+        // Session or Transport callbacks
+        static SecureSession *HandleAcceptSession(void *aContext, const Ip6::MessageInfo &aMessageInfo);
+        CoapDtlsSession      *HandleAcceptSession(void);
+        static void           HandleRemoveSession(void *aContext, SecureSession &aSession);
+        void                  HandleRemoveSession(SecureSession &aSession);
+        static void           HandleTransportClosed(void *aContext);
+        void                  HandleTransportClosed(void);
+
+#if OT_SHOULD_LOG_AT(OT_LOG_LEVEL_INFO)
+        static const char *StopReasonToString(StopReason aReason);
+#endif
+
+        using TimeoutTimer = TimerMilliIn<EphemeralKeyManager, &EphemeralKeyManager::HandleTimer>;
+        using CallbackTask = TaskletIn<EphemeralKeyManager, &EphemeralKeyManager::HandleTask>;
+
+        State                     mState;
+        Dtls::Transport           mDtlsTransport;
+        CoapDtlsSession          *mCoapDtlsSession;
+        TimeoutTimer              mTimer;
+        CallbackTask              mCallbackTask;
+        Callback<CallbackHandler> mCallback;
+    };
+
+    /**
+     * Gets the `EphemeralKeyManager` instance.
+     *
+     * @returns A reference to the `EphemeralKeyManager`.
+     */
+    EphemeralKeyManager &GetEphemeralKeyManager(void) { return mEphemeralKeyManager; }
 
 #endif // OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE
 
@@ -253,120 +363,230 @@ public:
      * Gets the set of border agent counters.
      *
      * @returns The border agent counters.
-     *
      */
-    const otBorderAgentCounters *GetCounters(void) { return &mCounters; }
-
-    /**
-     * Returns the UDP Proxy port to which the commissioner is currently
-     * bound.
-     *
-     * @returns  The current UDP Proxy port or 0 if no Proxy Transmit has been received yet.
-     *
-     */
-    uint16_t GetUdpProxyPort(void) const { return mUdpProxyPort; }
+    const Counters &GetCounters(void) { return mCounters; }
 
 private:
-    static_assert(kMaxEphemeralKeyLength <= SecureTransport::kPskMaxLength,
-                  "Max ephemeral key length is larger than max PSK len");
-
     static constexpr uint16_t kUdpPort          = OPENTHREAD_CONFIG_BORDER_AGENT_UDP_PORT;
     static constexpr uint32_t kKeepAliveTimeout = 50 * 1000; // Timeout to reject a commissioner (in msec)
 
-#if OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE
-    static constexpr uint16_t kMaxEphemeralKeyConnectionAttempts = 10;
-#endif
-
-    class ForwardContext : public InstanceLocatorInit, public Heap::Allocatable<ForwardContext>
+    class CoapDtlsSession : public Coap::SecureSession, public Heap::Allocatable<CoapDtlsSession>
     {
+        friend Heap::Allocatable<CoapDtlsSession>;
+
     public:
-        Error    Init(Instance &aInstance, const Coap::Message &aMessage, bool aPetition, bool aSeparate);
-        bool     IsPetition(void) const { return mPetition; }
-        uint16_t GetMessageId(void) const { return mMessageId; }
-        Error    ToHeader(Coap::Message &aMessage, uint8_t aCode) const;
+        Error    ForwardToCommissioner(Coap::Message &aForwardMessage, const Message &aMessage);
+        void     Cleanup(void);
+        bool     IsActiveCommissioner(void) const { return mIsActiveCommissioner; }
+        uint64_t GetAllocationTime(void) const { return mAllocationTime; }
 
     private:
-        uint16_t mMessageId;                             // The CoAP Message ID of the original request.
-        bool     mPetition : 1;                          // Whether the forwarding request is leader petition.
-        bool     mSeparate : 1;                          // Whether the original request expects separate response.
-        uint8_t  mTokenLength : 4;                       // The CoAP Token Length of the original request.
-        uint8_t  mType : 2;                              // The CoAP Type of the original request.
-        uint8_t  mToken[Coap::Message::kMaxTokenLength]; // The CoAP Token of the original request.
+        class ForwardContext : public ot::LinkedListEntry<ForwardContext>,
+                               public Heap::Allocatable<ForwardContext>,
+                               private ot::NonCopyable
+        {
+            friend class Heap::Allocatable<ForwardContext>;
+
+        public:
+            Error ToHeader(Coap::Message &aMessage, uint8_t aCode) const;
+
+            CoapDtlsSession &mSession;
+            ForwardContext  *mNext;
+            uint16_t         mMessageId;
+            bool             mPetition : 1;
+            bool             mSeparate : 1;
+            uint8_t          mTokenLength : 4;
+            uint8_t          mType : 2;
+            uint8_t          mToken[Coap::Message::kMaxTokenLength];
+
+        private:
+            ForwardContext(CoapDtlsSession &aSession, const Coap::Message &aMessage, bool aPetition, bool aSeparate);
+        };
+
+        CoapDtlsSession(Instance &aInstance, Dtls::Transport &aDtlsTransport);
+
+        void  HandleTmfCommissionerKeepAlive(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
+        void  HandleTmfRelayTx(Coap::Message &aMessage);
+        void  HandleTmfProxyTx(Coap::Message &aMessage);
+        void  HandleTmfDatasetGet(Coap::Message &aMessage, Uri aUri);
+        Error ForwardToLeader(const Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo, Uri aUri);
+        void  SendErrorMessage(const ForwardContext &aForwardContext, Error aError);
+        void  SendErrorMessage(const Coap::Message &aRequest, bool aSeparate, Error aError);
+
+        static void HandleConnected(ConnectEvent aEvent, void *aContext);
+        void        HandleConnected(ConnectEvent aEvent);
+        static void HandleCoapResponse(void                *aContext,
+                                       otMessage           *aMessage,
+                                       const otMessageInfo *aMessageInfo,
+                                       otError              aResult);
+        void HandleCoapResponse(const ForwardContext &aForwardContext, const Coap::Message *aResponse, Error aResult);
+        static bool HandleUdpReceive(void *aContext, const otMessage *aMessage, const otMessageInfo *aMessageInfo);
+        bool        HandleUdpReceive(const Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
+        static bool HandleResource(CoapBase               &aCoapBase,
+                                   const char             *aUriPath,
+                                   Coap::Message          &aMessage,
+                                   const Ip6::MessageInfo &aMessageInfo);
+        bool        HandleResource(const char *aUriPath, Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
+        static void HandleTimer(Timer &aTimer);
+        void        HandleTimer(void);
+
+        bool                       mIsActiveCommissioner;
+        LinkedList<ForwardContext> mForwardContexts;
+        TimerMilliContext          mTimer;
+        Ip6::Udp::Receiver         mUdpReceiver;
+        Ip6::Netif::UnicastAddress mCommissionerAloc;
+        uint64_t                   mAllocationTime;
     };
 
-    Error Start(uint16_t aUdpPort);
-    Error Start(uint16_t aUdpPort, const uint8_t *aPsk, uint8_t aPskLength);
+    class MeshCoPTxtEncoder : public InstanceLocator
+    {
+    public:
+        MeshCoPTxtEncoder(Instance &aInstance, MeshCoPServiceTxtData &aTxtData)
+            : InstanceLocator(aInstance)
+            , mTxtData(aTxtData)
+            , mAppender(mTxtData.mData, sizeof(mTxtData.mData))
+        {
+        }
 
+        enum : uint8_t
+        {
+            kConnectionModeDisabled = 0,
+            kConnectionModePskc     = 1,
+            kConnectionModePskd     = 2,
+            kConnectionModeVendor   = 3,
+            kConnectionModeX509     = 4,
+        };
+
+        enum : uint8_t
+        {
+            kThreadIfStatusNotInitialized = 0,
+            kThreadIfStatusInitialized    = 1,
+            kThreadIfStatusActive         = 2,
+        };
+
+        enum : uint8_t
+        {
+            kThreadRoleDisabledOrDetached = 0,
+            kThreadRoleChild              = 1,
+            kThreadRoleRouter             = 2,
+            kThreadRoleLeader             = 3,
+        };
+
+        enum : uint8_t
+        {
+            kAvailabilityInfrequent = 0,
+            kAvailabilityHigh       = 1,
+        };
+
+        struct StateBitmap
+        {
+            uint32_t mConnectionMode : 3;
+            uint32_t mThreadIfStatus : 2;
+            uint32_t mAvailability : 2;
+            uint32_t mBbrIsActive : 1;
+            uint32_t mBbrIsPrimary : 1;
+            uint32_t mThreadRole : 2;
+            uint32_t mEpskcSupported : 1;
+
+            StateBitmap(void)
+                : mConnectionMode(0)
+                , mThreadIfStatus(0)
+                , mAvailability(0)
+                , mBbrIsActive(0)
+                , mBbrIsPrimary(0)
+                , mThreadRole(kThreadRoleDisabledOrDetached)
+                , mEpskcSupported(0)
+            {
+            }
+
+            uint32_t ToUint32(void) const
+            {
+                uint32_t bitmap = 0;
+
+                bitmap |= mConnectionMode << 0;
+                bitmap |= mThreadIfStatus << 3;
+                bitmap |= mAvailability << 5;
+                bitmap |= mBbrIsActive << 7;
+                bitmap |= mBbrIsPrimary << 8;
+                bitmap |= mThreadRole << 9;
+                bitmap |= mEpskcSupported << 11;
+                return bitmap;
+            }
+        };
+
+        Error EncodeTxtData(void);
+
+    private:
+        Error AppendTxtEntry(const char *aKey, const void *aValue, uint16_t aValueLength);
+
+        template <typename ObjectType> Error AppendTxtEntry(const char *aKey, const ObjectType &aObject)
+        {
+            static_assert(!TypeTraits::IsPointer<ObjectType>::kValue, "ObjectType must not be a pointer");
+            static_assert(!TypeTraits::IsSame<ObjectType, NameData>::kValue, "ObjectType must not be `NameData`");
+
+            return AppendTxtEntry(aKey, &aObject, sizeof(ObjectType));
+        }
+
+#if OPENTHREAD_FTD && OPENTHREAD_CONFIG_BACKBONE_ROUTER_ENABLE
+        Error AppendBbrTxtEntry(StateBitmap aState);
+#endif
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+        Error AppendOmrTxtEntry(void);
+#endif
+
+        StateBitmap GetStateBitmap(void);
+
+        MeshCoPServiceTxtData &mTxtData;
+        Appender               mAppender;
+    };
+
+    void Start(void);
+    void Stop(void);
     void HandleNotifierEvents(Events aEvents);
-
-    Coap::Message::Code CoapCodeFromError(Error aError);
-    Error               SendMessage(Coap::Message &aMessage);
-    void                SendErrorMessage(const ForwardContext &aForwardContext, Error aError);
-    void                SendErrorMessage(const Coap::Message &aRequest, bool aSeparate, Error aError);
-
-    static void HandleConnected(SecureTransport::ConnectEvent aEvent, void *aContext);
-    void        HandleConnected(SecureTransport::ConnectEvent aEvent);
 
     template <Uri kUri> void HandleTmf(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
 
-    void HandleTmfDatasetGet(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo, Uri aUri);
-    void HandleTimeout(void);
+    static SecureSession *HandleAcceptSession(void *aContext, const Ip6::MessageInfo &aMessageInfo);
+    CoapDtlsSession      *HandleAcceptSession(void);
+    static void           HandleRemoveSession(void *aContext, SecureSession &aSession);
+    void                  HandleRemoveSession(SecureSession &aSession);
+    CoapDtlsSession      *FindActiveCommissionerSession(void);
 
-#if OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE
-    void        RestartAfterRemovingEphemeralKey(void);
-    void        HandleEphemeralKeyTimeout(void);
-    void        InvokeEphemeralKeyCallback(void);
-    static void HandleSecureAgentStopped(void *aContext);
-    void        HandleSecureAgentStopped(void);
-#endif
+    void HandleSessionConnected(CoapDtlsSession &aSession);
+    void HandleSessionDisconnected(CoapDtlsSession &aSession, CoapDtlsSession::ConnectEvent aEvent);
+    void HandleCommissionerPetitionAccepted(CoapDtlsSession &aSession);
 
-    static void HandleCoapResponse(void                *aContext,
-                                   otMessage           *aMessage,
-                                   const otMessageInfo *aMessageInfo,
-                                   Error                aResult);
-    void  HandleCoapResponse(const ForwardContext &aForwardContext, const Coap::Message *aResponse, Error aResult);
-    Error ForwardToLeader(const Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo, Uri aUri);
-    Error ForwardToCommissioner(Coap::Message &aForwardMessage, const Message &aMessage);
-    static bool HandleUdpReceive(void *aContext, const otMessage *aMessage, const otMessageInfo *aMessageInfo);
-    bool        HandleUdpReceive(const Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
+    static Coap::Message::Code CoapCodeFromError(Error aError);
 
-    using TimeoutTimer = TimerMilliIn<BorderAgent, &BorderAgent::HandleTimeout>;
-#if OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE
-    using EphemeralKeyTimer = TimerMilliIn<BorderAgent, &BorderAgent::HandleEphemeralKeyTimeout>;
-    using EphemeralKeyTask  = TaskletIn<BorderAgent, &BorderAgent::InvokeEphemeralKeyCallback>;
-#endif
+    void PostNotifyMeshCoPServiceChangedTask(void);
+    void NotifyMeshCoPServiceChanged(void);
 
-    State                      mState;
-    uint16_t                   mUdpProxyPort;
-    Ip6::Udp::Receiver         mUdpReceiver;
-    Ip6::Netif::UnicastAddress mCommissionerAloc;
-    TimeoutTimer               mTimer;
+    using NotifyMeshCoPServiceChangedTask = TaskletIn<BorderAgent, &BorderAgent::NotifyMeshCoPServiceChanged>;
+
+    bool            mIsRunning;
+    Dtls::Transport mDtlsTransport;
 #if OPENTHREAD_CONFIG_BORDER_AGENT_ID_ENABLE
     Id   mId;
     bool mIdInitialized;
 #endif
+    Callback<MeshCoPServiceChangedCallback> mMeshCoPServiceChangedCallback;
+    NotifyMeshCoPServiceChangedTask         mNotifyMeshCoPServiceChangedTask;
 #if OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE
-    bool                           mUsingEphemeralKey;
-    uint16_t                       mOldUdpPort;
-    EphemeralKeyTimer              mEphemeralKeyTimer;
-    EphemeralKeyTask               mEphemeralKeyTask;
-    Callback<EphemeralKeyCallback> mEphemeralKeyCallback;
+    EphemeralKeyManager mEphemeralKeyManager;
 #endif
-    otBorderAgentCounters mCounters;
+    Counters mCounters;
 };
 
 DeclareTmfHandler(BorderAgent, kUriRelayRx);
-DeclareTmfHandler(BorderAgent, kUriCommissionerPetition);
-DeclareTmfHandler(BorderAgent, kUriCommissionerKeepAlive);
-DeclareTmfHandler(BorderAgent, kUriRelayTx);
-DeclareTmfHandler(BorderAgent, kUriCommissionerGet);
-DeclareTmfHandler(BorderAgent, kUriActiveGet);
-DeclareTmfHandler(BorderAgent, kUriPendingGet);
-DeclareTmfHandler(BorderAgent, kUriProxyTx);
 
 } // namespace MeshCoP
 
 DefineCoreType(otBorderAgentId, MeshCoP::BorderAgent::Id);
+DefineCoreType(otBorderAgentSessionIterator, MeshCoP::BorderAgent::SessionIterator);
+
+#if OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE
+DefineMapEnum(otBorderAgentEphemeralKeyState, MeshCoP::BorderAgent::EphemeralKeyManager::State);
+#endif
 
 } // namespace ot
 

@@ -31,7 +31,6 @@
 
 /**
  * This header file defines the OpenThread core configuration for toranj with simulation platform.
- *
  */
 
 // Include the common configuration for all platforms.
@@ -43,6 +42,8 @@
 #else
 #define OPENTHREAD_CONFIG_PLATFORM_INFO "SIMULATION-toranj"
 #endif
+
+#define OPENTHREAD_CONFIG_SRP_SERVER_FAST_START_MODE_ENABLE 1
 
 #define OPENTHREAD_CONFIG_COAP_API_ENABLE 1
 

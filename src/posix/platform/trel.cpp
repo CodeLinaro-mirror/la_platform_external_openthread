@@ -181,6 +181,11 @@ static void PrepareSocket(uint16_t &aUdpPort)
     val = val | O_NONBLOCK;
     VerifyOrDie(fcntl(sSocket, F_SETFL, val) == 0, OT_EXIT_ERROR_ERRNO);
 
+#if defined(IPV6_ADDR_PREFERENCES) && defined(IPV6_PREFER_SRC_PUBLIC)
+    val = IPV6_PREFER_SRC_PUBLIC;
+    setsockopt(sSocket, IPPROTO_IPV6, IPV6_ADDR_PREFERENCES, &val, sizeof(val));
+#endif
+
     // Bind the socket.
 
     memset(&sockAddr, 0, sizeof(sockAddr));
@@ -285,9 +290,15 @@ static void ReceivePacket(int aSocket, otInstance *aInstance)
 
     if (sEnabled)
     {
+        otSockAddr senderAddr;
+
         ++sCounters.mRxPackets;
         sCounters.mRxBytes += sRxPacketLength;
-        otPlatTrelHandleReceived(aInstance, sRxPacketBuffer, sRxPacketLength);
+
+        memcpy(&senderAddr.mAddress, &sockAddr.sin6_addr, sizeof(otIp6Address));
+        senderAddr.mPort = ntohs(sockAddr.sin6_port);
+
+        otPlatTrelHandleReceived(aInstance, sRxPacketBuffer, sRxPacketLength, &senderAddr);
     }
 }
 
@@ -423,6 +434,25 @@ OT_TOOL_WEAK void trelDnssdStopBrowse(void)
     // earlier call to `trelDnssdStartBrowse()`.
 }
 
+OT_TOOL_WEAK void trelDnssdNotifyPeerSocketAddressDifference(const otSockAddr *aPeerSockAddr,
+                                                             const otSockAddr *aRxSockAddr)
+{
+    // Notifies platform that a TREL packet was received from a previously
+    // discovered peer with `aPeerSockAddr` now using a different socket
+    // address `aRxSockAddr` compared to the one reported earlier by DNS-SD
+    // using the `otPlatTrelHandleDiscoveredPeerInfo()` callback.
+    //
+    // Ideally the platform DNS-SD should detect changes to advertised port
+    // and addresses by peers, however, there are situations where this is
+    // not detected reliably. This function signals to that we received a
+    // packet from a peer with it using a different port or address. This can
+    // be used to restart/confirm the DNS-SD service/address resolution for
+    // the peer service and/or take any other relevant actions.
+
+    OT_UNUSED_VARIABLE(aPeerSockAddr);
+    OT_UNUSED_VARIABLE(aRxSockAddr);
+}
+
 OT_TOOL_WEAK void trelDnssdRegisterService(uint16_t aPort, const uint8_t *aTxtData, uint8_t aTxtLength)
 {
     // This function registers a new service to be advertised using
@@ -540,6 +570,15 @@ void otPlatTrelSend(otInstance       *aInstance,
 
 exit:
     return;
+}
+
+void otPlatTrelNotifyPeerSocketAddressDifference(otInstance       *aInstance,
+                                                 const otSockAddr *aPeerSockAddr,
+                                                 const otSockAddr *aRxSockAddr)
+{
+    OT_UNUSED_VARIABLE(aInstance);
+
+    trelDnssdNotifyPeerSocketAddressDifference(aPeerSockAddr, aRxSockAddr);
 }
 
 void otPlatTrelRegisterService(otInstance *aInstance, uint16_t aPort, const uint8_t *aTxtData, uint8_t aTxtLength)

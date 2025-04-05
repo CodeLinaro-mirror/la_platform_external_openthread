@@ -35,23 +35,7 @@
 
 #if OPENTHREAD_FTD
 
-#include "coap/coap_message.hpp"
-#include "common/as_core_type.hpp"
-#include "common/code_utils.hpp"
-#include "common/debug.hpp"
-#include "common/encoding.hpp"
-#include "common/locator_getters.hpp"
-#include "common/log.hpp"
-#include "common/message.hpp"
-#include "common/timer.hpp"
 #include "instance/instance.hpp"
-#include "mac/mac_types.hpp"
-#include "meshcop/meshcop.hpp"
-#include "thread/lowpan.hpp"
-#include "thread/mle_router.hpp"
-#include "thread/thread_netif.hpp"
-#include "thread/thread_tlvs.hpp"
-#include "thread/uri_paths.hpp"
 
 namespace ot {
 namespace NetworkData {
@@ -125,17 +109,17 @@ Error Leader::AnycastLookup(uint16_t aAloc16, uint16_t &aRloc16) const
     {
         aRloc16 = Get<Mle::Mle>().GetLeaderRloc16();
     }
-    else if (aAloc16 <= Mle::kAloc16DhcpAgentEnd)
+    else if (IsValueInRange(aAloc16, Mle::kAloc16DhcpAgentStart, Mle::kAloc16DhcpAgentEnd))
     {
         uint8_t contextId = static_cast<uint8_t>(aAloc16 - Mle::kAloc16DhcpAgentStart + 1);
 
         error = LookupRouteForAgentAloc(contextId, IsEntryForDhcp6Agent, aRloc16);
     }
-    else if (aAloc16 <= Mle::kAloc16ServiceEnd)
+    else if (IsValueInRange(aAloc16, Mle::kAloc16ServiceStart, Mle::kAloc16ServiceEnd))
     {
         error = LookupRouteForServiceAloc(aAloc16, aRloc16);
     }
-    else if (aAloc16 <= Mle::kAloc16CommissionerEnd)
+    else if (IsValueInRange(aAloc16, Mle::kAloc16CommissionerStart, Mle::kAloc16CommissionerEnd))
     {
         error = FindBorderAgentRloc(aRloc16);
     }
@@ -146,7 +130,7 @@ Error Leader::AnycastLookup(uint16_t aAloc16, uint16_t &aRloc16) const
         aRloc16 = Get<BackboneRouter::Leader>().GetServer16();
     }
 #endif
-    else if ((aAloc16 >= Mle::kAloc16NeighborDiscoveryAgentStart) && (aAloc16 <= Mle::kAloc16NeighborDiscoveryAgentEnd))
+    else if (IsValueInRange(aAloc16, Mle::kAloc16NeighborDiscoveryAgentStart, Mle::kAloc16NeighborDiscoveryAgentEnd))
     {
         uint8_t contextId = static_cast<uint8_t>(aAloc16 - Mle::kAloc16NeighborDiscoveryAgentStart + 1);
 

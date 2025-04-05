@@ -1,16 +1,20 @@
+# This project was upgraded with external_updater.
+# Usage: tools/external_updater/updater.sh update external/openthread
+# For more info, check https://cs.android.com/android/platform/superproject/main/+/main:tools/external_updater/README.md
+
 name: "openthread"
 description: "OpenThread is an open-source implementation of the Thread networking protocol."
 third_party {
   license_type: NOTICE
   last_upgrade_date {
-    year: 2024
-    month: 9
+    year: 2025
+    month: 3
     day: 5
   }
   homepage: "https://github.com/openthread/openthread"
   identifier {
     type: "Git"
     value: "https://github.com/openthread/openthread.git"
-    version: "e63e9ce86b4f22f95155e1e2e9da1d300389e7c6"
+    version: "a470e8bf0d1c9368f862d3627cafc02e13b351f7"
   }
 }
