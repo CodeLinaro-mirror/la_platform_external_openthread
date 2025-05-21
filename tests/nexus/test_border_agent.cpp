@@ -85,6 +85,18 @@ void TestBorderAgent(void)
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     Log("Check Border Agent initial state");
 
+    VerifyOrQuit(node0.Get<BorderAgent>().IsEnabled());
+    VerifyOrQuit(node0.Get<BorderAgent>().IsRunning());
+
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    Log("Check disabling and re-enabling of Border Agent");
+
+    node0.Get<BorderAgent>().SetEnabled(false);
+    VerifyOrQuit(!node0.Get<BorderAgent>().IsEnabled());
+    VerifyOrQuit(!node0.Get<BorderAgent>().IsRunning());
+
+    node0.Get<BorderAgent>().SetEnabled(true);
+    VerifyOrQuit(node0.Get<BorderAgent>().IsEnabled());
     VerifyOrQuit(node0.Get<BorderAgent>().IsRunning());
 
     SuccessOrQuit(node0.Get<Ip6::Filter>().AddUnsecurePort(node0.Get<BorderAgent>().GetUdpPort()));
@@ -742,32 +754,109 @@ void TestBorderAgentEphemeralKey(void)
     VerifyOrQuit(node0.Get<BorderAgent>().GetCounters().mEpskcInvalidArgsErrors == 2);
 }
 
-class MeshCoPServiceTester
+//----------------------------------------------------------------------------------------------------------------------
+
+struct TxtData
 {
-public:
-    MeshCoPServiceTester(BorderAgent &aBorderAgent)
-        : mBorderAgent(aBorderAgent)
-        , mIsRunning(false)
-        , mUdpPort(0)
+    void Init(const uint8_t *aData, uint16_t aLength) { mData = aData, mLength = aLength; }
+
+    void ValidateFormat(void)
     {
+        TxtEntry::Iterator iter;
+        TxtEntry           txtEntry;
+
+        iter.Init(mData, mLength);
+
+        while (true)
+        {
+            Error error = iter.GetNextEntry(txtEntry);
+
+            if (error == kErrorNotFound)
+            {
+                break;
+            }
+
+            SuccessOrQuit(error);
+            VerifyOrQuit(txtEntry.mKey != nullptr);
+        }
     }
 
-    void HandleMeshCoPServiceChanged(void)
+    void LogAllTxtEntries(void)
     {
-        mIsRunning = mBorderAgent.IsRunning();
-        mUdpPort   = mBorderAgent.GetUdpPort();
-        SuccessOrQuit(mBorderAgent.GetMeshCoPServiceTxtData(mTxtData));
+        static constexpr uint16_t kValueStringSize = 256;
+
+        char               valueString[kValueStringSize];
+        TxtEntry::Iterator iter;
+        TxtEntry           txtEntry;
+
+        Log("TXT data - length %u", mLength);
+
+        iter.Init(mData, mLength);
+
+        while (true)
+        {
+            Error        error = iter.GetNextEntry(txtEntry);
+            StringWriter writer(valueString, sizeof(valueString));
+
+            if (error == kErrorNotFound)
+            {
+                break;
+            }
+
+            SuccessOrQuit(error);
+            VerifyOrQuit(txtEntry.mKey != nullptr);
+
+            writer.AppendHexBytes(txtEntry.mValue, txtEntry.mValueLength);
+            Log("   %s -> [%s] (len:%u)", txtEntry.mKey, valueString, txtEntry.mValueLength);
+        }
     }
 
-    bool FindTxtEntry(const char *aKey, TxtEntry &aTxtEntry)
+    bool ContainsKey(const char *aKey) const
+    {
+        TxtEntry txtEntry;
+
+        return FindTxtEntry(aKey, txtEntry);
+    }
+
+    void ValidateKey(const char *aKey, const void *aValue, uint16_t aValueLength) const
+    {
+        TxtEntry txtEntry;
+
+        VerifyOrQuit(FindTxtEntry(aKey, txtEntry));
+        VerifyOrQuit(txtEntry.mValueLength == aValueLength);
+        VerifyOrQuit(memcmp(txtEntry.mValue, aValue, aValueLength) == 0);
+    }
+
+    template <typename ObjectType> void ValidateKey(const char *aKey, const ObjectType &aObject) const
+    {
+        static_assert(!TypeTraits::IsPointer<ObjectType>::kValue, "ObjectType must not be a pointer");
+
+        ValidateKey(aKey, &aObject, sizeof(aObject));
+    }
+
+    void ValidateKey(const char *aKey, const char *aString) const { ValidateKey(aKey, aString, strlen(aString)); }
+
+    uint32_t ReadUint32Key(const char *aKey) const
+    {
+        TxtEntry txtEntry;
+
+        VerifyOrQuit(FindTxtEntry(aKey, txtEntry));
+        VerifyOrQuit(txtEntry.mValueLength == sizeof(uint32_t));
+        return BigEndian::ReadUint32(txtEntry.mValue);
+    }
+
+    bool FindTxtEntry(const char *aKey, TxtEntry &aTxtEntry) const
     {
         bool               found = false;
         TxtEntry::Iterator iter;
 
-        iter.Init(mTxtData.mData, mTxtData.mLength);
+        iter.Init(mData, mLength);
+
         while (iter.GetNextEntry(aTxtEntry) == kErrorNone)
         {
-            if (strcmp(aTxtEntry.mKey, aKey) == 0)
+            VerifyOrQuit(aTxtEntry.mKey != nullptr);
+
+            if (StringMatch(aTxtEntry.mKey, aKey))
             {
                 found = true;
                 break;
@@ -777,102 +866,511 @@ public:
         return found;
     }
 
-    BorderAgent                       &mBorderAgent;
-    otBorderAgentMeshCoPServiceTxtData mTxtData;
-    bool                               mIsRunning;
-    uint16_t                           mUdpPort;
+    const uint8_t *mData;
+    uint16_t       mLength;
 };
 
-static void HandleMeshCoPServiceChanged(void *aContext)
+void ValidateMeshCoPTxtData(TxtData &aTxtData, Node &aNode)
 {
-    static_cast<MeshCoPServiceTester *>(aContext)->HandleMeshCoPServiceChanged();
+    // State bitmap masks and field values
+    static constexpr uint32_t kMaskConnectionMode           = 7 << 0;
+    static constexpr uint32_t kConnectionModeDisabled       = 0 << 0;
+    static constexpr uint32_t kConnectionModePskc           = 1 << 0;
+    static constexpr uint32_t kMaskThreadIfStatus           = 3 << 3;
+    static constexpr uint32_t kThreadIfStatusNotInitialized = 0 << 3;
+    static constexpr uint32_t kThreadIfStatusInitialized    = 1 << 3;
+    static constexpr uint32_t kThreadIfStatusActive         = 2 << 3;
+    static constexpr uint32_t kMaskThreadRole               = 3 << 9;
+    static constexpr uint32_t kThreadRoleDisabledOrDetached = 0 << 9;
+    static constexpr uint32_t kThreadRoleChild              = 1 << 9;
+    static constexpr uint32_t kThreadRoleRouter             = 2 << 9;
+    static constexpr uint32_t kThreadRoleLeader             = 3 << 9;
+    static constexpr uint32_t kFlagEpskcSupported           = 1 << 11;
+
+    BorderAgent::Id id;
+    uint32_t        stateBitmap;
+    uint32_t        threadIfStatus;
+    uint32_t        threadRole;
+
+    aTxtData.ValidateFormat();
+    aTxtData.LogAllTxtEntries();
+
+    SuccessOrQuit(aNode.Get<BorderAgent>().GetId(id));
+    aTxtData.ValidateKey("id", id);
+    aTxtData.ValidateKey("rv", "1");
+    aTxtData.ValidateKey("nn", aNode.Get<NetworkNameManager>().GetNetworkName().GetAsCString());
+    aTxtData.ValidateKey("xp", aNode.Get<ExtendedPanIdManager>().GetExtPanId());
+    aTxtData.ValidateKey("tv", kThreadVersionString);
+    aTxtData.ValidateKey("xa", aNode.Get<Mac::Mac>().GetExtAddress());
+
+    if (aNode.Get<Mle::Mle>().IsAttached())
+    {
+        aTxtData.ValidateKey("pt", BigEndian::HostSwap32(aNode.Get<Mle::Mle>().GetLeaderData().GetPartitionId()));
+        aTxtData.ValidateKey("at", aNode.Get<ActiveDatasetManager>().GetTimestamp());
+    }
+    else
+    {
+        VerifyOrQuit(!aTxtData.ContainsKey("pt"));
+        VerifyOrQuit(!aTxtData.ContainsKey("at"));
+    }
+
+    stateBitmap = aTxtData.ReadUint32Key("sb");
+
+    VerifyOrQuit((stateBitmap & kMaskConnectionMode) == aNode.Get<BorderAgent>().IsRunning() ? kConnectionModePskc
+                                                                                             : kConnectionModeDisabled);
+    switch (aNode.Get<Mle::Mle>().GetRole())
+    {
+    case Mle::DeviceRole::kRoleDisabled:
+        threadIfStatus = kThreadIfStatusNotInitialized;
+        threadRole     = kThreadRoleDisabledOrDetached;
+        break;
+    case Mle::DeviceRole::kRoleDetached:
+        threadIfStatus = kThreadIfStatusInitialized;
+        threadRole     = kThreadRoleDisabledOrDetached;
+        break;
+    case Mle::DeviceRole::kRoleChild:
+        threadIfStatus = kThreadIfStatusActive;
+        threadRole     = kThreadRoleChild;
+        break;
+    case Mle::DeviceRole::kRoleRouter:
+        threadIfStatus = kThreadIfStatusActive;
+        threadRole     = kThreadRoleRouter;
+        break;
+    case Mle::DeviceRole::kRoleLeader:
+        threadIfStatus = kThreadIfStatusActive;
+        threadRole     = kThreadRoleLeader;
+        break;
+    }
+
+    VerifyOrQuit((stateBitmap & kMaskThreadIfStatus) == threadIfStatus);
+    VerifyOrQuit((stateBitmap & kMaskThreadRole) == threadRole);
+
+    if (aNode.Get<BorderAgent>().Get<EphemeralKeyManager>().GetState() !=
+        BorderAgent::EphemeralKeyManager::kStateDisabled)
+    {
+        VerifyOrQuit(stateBitmap & kFlagEpskcSupported);
+    }
+    else
+    {
+        VerifyOrQuit(!(stateBitmap & kFlagEpskcSupported));
+    }
 }
 
-template <typename ObjectType> bool CheckObjectSameAsTxtEntryData(const TxtEntry &aTxtEntry, const ObjectType &aObject)
-{
-    static_assert(!TypeTraits::IsPointer<ObjectType>::kValue, "ObjectType must not be a pointer");
+//----------------------------------------------------------------------------------------------------------------------
 
-    return aTxtEntry.mValueLength == sizeof(ObjectType) && memcmp(aTxtEntry.mValue, &aObject, sizeof(ObjectType)) == 0;
+void HandleServiceChanged(void *aContext) // Callback used in `TestBorderAgentTxtDataCallback().`
+{
+    // `aContext` is a boolean `callbackInvoked`
+    VerifyOrQuit(aContext != nullptr);
+    *static_cast<bool *>(aContext) = true;
 }
 
-template <> bool CheckObjectSameAsTxtEntryData<NameData>(const TxtEntry &aTxtEntry, const NameData &aNameData)
+void ReadAndValidateMeshCoPTxtData(Node &aNode)
 {
-    return aTxtEntry.mValueLength == aNameData.GetLength() &&
-           memcmp(aTxtEntry.mValue, aNameData.GetBuffer(), aNameData.GetLength()) == 0;
+    BorderAgent::ServiceTxtData serviceTxtData;
+    TxtData                     txtData;
+
+    SuccessOrQuit(aNode.Get<BorderAgent>().PrepareServiceTxtData(serviceTxtData));
+    txtData.Init(serviceTxtData.mData, serviceTxtData.mLength);
+
+    ValidateMeshCoPTxtData(txtData, aNode);
 }
 
-void TestBorderAgentMeshCoPServiceChangedCallback(void)
+void TestBorderAgentTxtDataCallback(void)
 {
-    Core  nexus;
-    Node &node0 = nexus.CreateNode();
+    Core            nexus;
+    Node           &node0           = nexus.CreateNode();
+    bool            callbackInvoked = false;
+    BorderAgent::Id newId;
 
     Log("------------------------------------------------------------------------------------------------------");
-    Log("TestBorderAgentMeshCoPServiceChangedCallback");
+    Log("TestBorderAgentTxtDataCallback");
 
     nexus.AdvanceTime(0);
-    MeshCoPServiceTester meshCoPServiceTester(node0.Get<BorderAgent>());
-    TxtEntry             txtEntry;
 
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    // 1. Set MeshCoP service change callback. Will get initial values.
+    // Set MeshCoP service change callback. Will get initial values.
     Log("Set MeshCoP service change callback and check initial values");
-    node0.Get<BorderAgent>().SetMeshCoPServiceChangedCallback(HandleMeshCoPServiceChanged, &meshCoPServiceTester);
+    node0.Get<BorderAgent>().SetServiceChangedCallback(HandleServiceChanged, &callbackInvoked);
     nexus.AdvanceTime(1);
 
-    // 1.1 Check the initial TXT entries
-#if OPENTHREAD_CONFIG_BORDER_AGENT_ID_ENABLE
-    VerifyOrQuit(meshCoPServiceTester.FindTxtEntry("id", txtEntry));
-    BorderAgent::Id id;
-    VerifyOrQuit(node0.Get<BorderAgent>().GetId(id) == kErrorNone);
-    VerifyOrQuit(CheckObjectSameAsTxtEntryData(txtEntry, id));
-#endif
-    VerifyOrQuit(meshCoPServiceTester.FindTxtEntry("nn", txtEntry));
-    VerifyOrQuit(CheckObjectSameAsTxtEntryData(txtEntry, node0.Get<NetworkNameManager>().GetNetworkName().GetAsData()));
-    VerifyOrQuit(meshCoPServiceTester.FindTxtEntry("xp", txtEntry));
-    VerifyOrQuit(CheckObjectSameAsTxtEntryData(txtEntry, node0.Get<ExtendedPanIdManager>().GetExtPanId()));
-    VerifyOrQuit(meshCoPServiceTester.FindTxtEntry("tv", txtEntry));
-    VerifyOrQuit(CheckObjectSameAsTxtEntryData(txtEntry, NameData(kThreadVersionString, strlen(kThreadVersionString))));
-    VerifyOrQuit(meshCoPServiceTester.FindTxtEntry("xa", txtEntry));
-    VerifyOrQuit(CheckObjectSameAsTxtEntryData(txtEntry, node0.Get<Mac::Mac>().GetExtAddress()));
-    VerifyOrQuit(meshCoPServiceTester.FindTxtEntry("sb", txtEntry));
+    // Check the initial TXT entries
+    ReadAndValidateMeshCoPTxtData(node0);
 
-    VerifyOrQuit(meshCoPServiceTester.FindTxtEntry("pt", txtEntry) == false);
-    VerifyOrQuit(meshCoPServiceTester.FindTxtEntry("at", txtEntry) == false);
-
-    // 1.2 Check the Border Agent state
-    VerifyOrQuit(meshCoPServiceTester.mIsRunning == false);
-    VerifyOrQuit(meshCoPServiceTester.mUdpPort == 0);
+    // Check the Border Agent state
+    VerifyOrQuit(!node0.Get<BorderAgent>().IsRunning());
+    VerifyOrQuit(node0.Get<BorderAgent>().GetUdpPort() == 0);
 
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    // 2. Join Thread network and check updated values and states.
+    // Join Thread network and check updated values and states.
+    callbackInvoked = false;
     Log("Join Thread network and check updated Txt data and states");
     node0.Form();
     nexus.AdvanceTime(50 * Time::kOneSecondInMsec);
 
-    // 2.1 Check the initial TXT entries
-#if OPENTHREAD_CONFIG_BORDER_AGENT_ID_ENABLE
-    VerifyOrQuit(meshCoPServiceTester.FindTxtEntry("id", txtEntry));
-    VerifyOrQuit(node0.Get<BorderAgent>().GetId(id) == kErrorNone);
-    VerifyOrQuit(CheckObjectSameAsTxtEntryData(txtEntry, id));
-#endif
-    VerifyOrQuit(meshCoPServiceTester.FindTxtEntry("nn", txtEntry));
-    VerifyOrQuit(CheckObjectSameAsTxtEntryData(txtEntry, node0.Get<NetworkNameManager>().GetNetworkName().GetAsData()));
-    VerifyOrQuit(meshCoPServiceTester.FindTxtEntry("xp", txtEntry));
-    VerifyOrQuit(CheckObjectSameAsTxtEntryData(txtEntry, node0.Get<ExtendedPanIdManager>().GetExtPanId()));
-    VerifyOrQuit(meshCoPServiceTester.FindTxtEntry("tv", txtEntry));
-    VerifyOrQuit(CheckObjectSameAsTxtEntryData(txtEntry, NameData(kThreadVersionString, strlen(kThreadVersionString))));
-    VerifyOrQuit(meshCoPServiceTester.FindTxtEntry("xa", txtEntry));
-    VerifyOrQuit(CheckObjectSameAsTxtEntryData(txtEntry, node0.Get<Mac::Mac>().GetExtAddress()));
-    VerifyOrQuit(meshCoPServiceTester.FindTxtEntry("sb", txtEntry));
-    VerifyOrQuit(meshCoPServiceTester.FindTxtEntry("pt", txtEntry));
-    VerifyOrQuit(CheckObjectSameAsTxtEntryData(
-        txtEntry, BigEndian::HostSwap32(node0.Get<Mle::MleRouter>().GetLeaderData().GetPartitionId())));
-    VerifyOrQuit(meshCoPServiceTester.FindTxtEntry("at", txtEntry));
-    VerifyOrQuit(CheckObjectSameAsTxtEntryData(txtEntry, node0.Get<ActiveDatasetManager>().GetTimestamp()));
+    VerifyOrQuit(callbackInvoked);
+    ReadAndValidateMeshCoPTxtData(node0);
 
-    // 2.2 Check the Border Agent state
-    VerifyOrQuit(meshCoPServiceTester.mIsRunning == true);
-    VerifyOrQuit(meshCoPServiceTester.mUdpPort != 0);
+    VerifyOrQuit(node0.Get<BorderAgent>().IsRunning());
+    VerifyOrQuit(node0.Get<BorderAgent>().GetUdpPort() != 0);
+
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    Log("Change the Border Agent ID and validate that TXT data changed and callback is invoked");
+
+    newId.GenerateRandom();
+
+    callbackInvoked = false;
+    SuccessOrQuit(node0.Get<BorderAgent>().SetId(newId));
+
+    nexus.AdvanceTime(1);
+    ReadAndValidateMeshCoPTxtData(node0);
+
+    // Validate that setting the ID to the same value as before is
+    // correctly detected and does not trigger the callback.
+
+    callbackInvoked = false;
+    SuccessOrQuit(node0.Get<BorderAgent>().SetId(newId));
+    nexus.AdvanceTime(1);
+    VerifyOrQuit(!callbackInvoked);
+
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    Log("Disable EphemeralKeyManager and validate that TXT data state bitmap indicates this");
+
+    callbackInvoked = false;
+    node0.Get<EphemeralKeyManager>().SetEnabled(false);
+    VerifyOrQuit(node0.Get<EphemeralKeyManager>().GetState() == EphemeralKeyManager::kStateDisabled);
+
+    nexus.AdvanceTime(1);
+    VerifyOrQuit(callbackInvoked);
+    ReadAndValidateMeshCoPTxtData(node0);
+
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    Log("Disable the MLE operation and validate the TXT data state bitmap");
+
+    callbackInvoked = false;
+    SuccessOrQuit(node0.Get<Mle::Mle>().Disable());
+
+    nexus.AdvanceTime(1);
+    VerifyOrQuit(callbackInvoked);
+    ReadAndValidateMeshCoPTxtData(node0);
+}
+
+//----------------------------------------------------------------------------------------------------------------------
+
+void ValidateRegisteredServiceData(Dns::Multicast::Core::Service &aService, Node &aNode)
+{
+    TxtData txtData;
+
+    txtData.Init(aService.mTxtData, aService.mTxtDataLength);
+    ValidateMeshCoPTxtData(txtData, aNode);
+}
+
+void TestBorderAgentServiceRegisteration(void)
+{
+    static const char    kDefaultServiceBaseName[] = OPENTHREAD_CONFIG_BORDER_AGENT_MESHCOP_SERVICE_BASE_NAME;
+    static const char    kEphemeralKey[]           = "nexus1234";
+    static const uint8_t kVendorTxtData[]          = {8, 'v', 'n', '=', 'n', 'e', 'x', 'u', 's'};
+
+    static constexpr uint32_t kUdpPort      = 49155;
+    static constexpr uint32_t kInfraIfIndex = 1;
+
+    Core                             nexus;
+    Node                            &node0 = nexus.CreateNode();
+    Dns::Multicast::Core::Iterator  *iterator;
+    Dns::Multicast::Core::Service    service;
+    Dns::Multicast::Core::EntryState entryState;
+    uint16_t                         txtDataLengthWithNoVendorData;
+
+    Log("------------------------------------------------------------------------------------------------------");
+    Log("TestBorderAgentServiceRegisteration");
+
+    nexus.AdvanceTime(0);
+
+    node0.Form();
+
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Enable mDNS
+    SuccessOrQuit(node0.Get<Dns::Multicast::Core>().SetEnabled(true, kInfraIfIndex));
+    VerifyOrQuit(node0.Get<Dns::Multicast::Core>().IsEnabled());
+
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    nexus.AdvanceTime(50 * Time::kOneSecondInMsec);
+    VerifyOrQuit(node0.Get<Mle::Mle>().IsLeader());
+
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    VerifyOrQuit(node0.Get<MeshCoP::BorderAgent>().IsEnabled());
+
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    Log("Validate the registered mDNS MeshCop service by Border Agent");
+
+    iterator = node0.Get<Dns::Multicast::Core>().AllocateIterator();
+    VerifyOrQuit(iterator != nullptr);
+
+    SuccessOrQuit(node0.Get<Dns::Multicast::Core>().GetNextService(*iterator, service, entryState));
+
+    Log("  HostName: %s", service.mHostName);
+    Log("  ServiceInstance: %s", service.mServiceInstance);
+    Log("  ServiceType: %s", service.mServiceType);
+    Log("  Port: %u", service.mPort);
+    Log("  TTL: %lu", ToUlong(service.mTtl));
+
+    VerifyOrQuit(StringMatch(service.mServiceType, "_meshcop._udp"));
+    VerifyOrQuit(StringStartsWith(service.mServiceInstance, kDefaultServiceBaseName));
+    VerifyOrQuit(StringStartsWith(service.mHostName, "ot"));
+    VerifyOrQuit(service.mPort == node0.Get<MeshCoP::BorderAgent>().GetUdpPort());
+    VerifyOrQuit(service.mSubTypeLabelsLength == 0);
+    VerifyOrQuit(service.mTtl > 0);
+    VerifyOrQuit(service.mInfraIfIndex == kInfraIfIndex);
+    VerifyOrQuit(entryState == OT_MDNS_ENTRY_STATE_REGISTERED);
+    ValidateRegisteredServiceData(service, node0);
+
+    // Check that there is no more registered mDNS service
+    VerifyOrQuit(node0.Get<Dns::Multicast::Core>().GetNextService(*iterator, service, entryState) == kErrorNotFound);
+
+    node0.Get<Dns::Multicast::Core>().FreeIterator(*iterator);
+
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    Log("Enable ans start ephemeral key");
+
+    node0.Get<EphemeralKeyManager>().SetEnabled(true);
+    VerifyOrQuit(node0.Get<EphemeralKeyManager>().GetState() == EphemeralKeyManager::kStateStopped);
+    node0.Get<EphemeralKeyManager>().SetCallback(HandleEphemeralKeyChange, &node0);
+
+    SuccessOrQuit(node0.Get<EphemeralKeyManager>().Start(kEphemeralKey, /* aTimeout */ 0, kUdpPort));
+
+    nexus.AdvanceTime(10 * Time::kOneSecondInMsec);
+
+    VerifyOrQuit(node0.Get<EphemeralKeyManager>().GetState() == EphemeralKeyManager::kStateStarted);
+    VerifyOrQuit(node0.Get<EphemeralKeyManager>().GetUdpPort() == kUdpPort);
+
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    Log("Check the registered services");
+
+    iterator = node0.Get<Dns::Multicast::Core>().AllocateIterator();
+    VerifyOrQuit(iterator != nullptr);
+
+    for (uint8_t num = 2; num > 0; num--)
+    {
+        SuccessOrQuit(node0.Get<Dns::Multicast::Core>().GetNextService(*iterator, service, entryState));
+        Log("- - - - - - - - - - - - - - - - -");
+        Log("  HostName: %s", service.mHostName);
+        Log("  ServiceInstance: %s", service.mServiceInstance);
+        Log("  ServiceType: %s", service.mServiceType);
+        Log("  Port: %u", service.mPort);
+        Log("  TTL: %lu", ToUlong(service.mTtl));
+
+        VerifyOrQuit(StringStartsWith(service.mServiceInstance, kDefaultServiceBaseName));
+        VerifyOrQuit(StringStartsWith(service.mHostName, "ot"));
+        VerifyOrQuit(service.mSubTypeLabelsLength == 0);
+        VerifyOrQuit(service.mTtl > 0);
+        VerifyOrQuit(service.mInfraIfIndex == kInfraIfIndex);
+        VerifyOrQuit(entryState == OT_MDNS_ENTRY_STATE_REGISTERED);
+
+        if (StringMatch(service.mServiceType, "_meshcop._udp"))
+        {
+            VerifyOrQuit(service.mPort == node0.Get<MeshCoP::BorderAgent>().GetUdpPort());
+            ValidateRegisteredServiceData(service, node0);
+        }
+        else if (StringMatch(service.mServiceType, "_meshcop-e._udp"))
+        {
+            VerifyOrQuit(service.mPort == kUdpPort);
+            VerifyOrQuit(service.mTxtDataLength == 1);
+            VerifyOrQuit(service.mTxtData[0] == 0);
+        }
+        else
+        {
+            // Unexpected service type
+            VerifyOrQuit(false);
+        }
+    }
+
+    // Check that there is no more registered mDNS service
+    VerifyOrQuit(node0.Get<Dns::Multicast::Core>().GetNextService(*iterator, service, entryState) == kErrorNotFound);
+
+    node0.Get<Dns::Multicast::Core>().FreeIterator(*iterator);
+
+    Log("Wait for the ephemeral key to expire and validate the registered service is removed");
+
+    nexus.AdvanceTime(5 * Time::kOneMinuteInMsec);
+
+    iterator = node0.Get<Dns::Multicast::Core>().AllocateIterator();
+    VerifyOrQuit(iterator != nullptr);
+
+    SuccessOrQuit(node0.Get<Dns::Multicast::Core>().GetNextService(*iterator, service, entryState));
+    Log("  HostName: %s", service.mHostName);
+    Log("  ServiceInstance: %s", service.mServiceInstance);
+    Log("  ServiceType: %s", service.mServiceType);
+    Log("  Port: %u", service.mPort);
+    Log("  TTL: %lu", ToUlong(service.mTtl));
+
+    VerifyOrQuit(StringMatch(service.mServiceType, "_meshcop._udp"));
+    VerifyOrQuit(StringStartsWith(service.mServiceInstance, kDefaultServiceBaseName));
+    VerifyOrQuit(StringStartsWith(service.mHostName, "ot"));
+    VerifyOrQuit(service.mSubTypeLabelsLength == 0);
+    VerifyOrQuit(service.mPort == node0.Get<MeshCoP::BorderAgent>().GetUdpPort());
+    VerifyOrQuit(service.mTtl > 0);
+    VerifyOrQuit(service.mInfraIfIndex == kInfraIfIndex);
+    VerifyOrQuit(entryState == OT_MDNS_ENTRY_STATE_REGISTERED);
+    ValidateRegisteredServiceData(service, node0);
+
+    // Check that there is no more registered mDNS service
+    VerifyOrQuit(node0.Get<Dns::Multicast::Core>().GetNextService(*iterator, service, entryState) == kErrorNotFound);
+
+    node0.Get<Dns::Multicast::Core>().FreeIterator(*iterator);
+
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    Log("Change the base service name and validate the new service");
+
+    SuccessOrQuit(node0.Get<MeshCoP::BorderAgent>().SetServiceBaseName("OpenThreadAgent"));
+
+    nexus.AdvanceTime(30 * Time::kOneSecondInMsec);
+
+    iterator = node0.Get<Dns::Multicast::Core>().AllocateIterator();
+    VerifyOrQuit(iterator != nullptr);
+
+    SuccessOrQuit(node0.Get<Dns::Multicast::Core>().GetNextService(*iterator, service, entryState));
+    Log("  HostName: %s", service.mHostName);
+    Log("  ServiceInstance: %s", service.mServiceInstance);
+    Log("  ServiceType: %s", service.mServiceType);
+    Log("  Port: %u", service.mPort);
+    Log("  TTL: %lu", ToUlong(service.mTtl));
+
+    VerifyOrQuit(StringMatch(service.mServiceType, "_meshcop._udp"));
+    VerifyOrQuit(StringStartsWith(service.mServiceInstance, "OpenThreadAgent"));
+    VerifyOrQuit(StringStartsWith(service.mHostName, "ot"));
+    VerifyOrQuit(service.mSubTypeLabelsLength == 0);
+    VerifyOrQuit(service.mPort == node0.Get<MeshCoP::BorderAgent>().GetUdpPort());
+    VerifyOrQuit(service.mTtl > 0);
+    VerifyOrQuit(service.mInfraIfIndex == kInfraIfIndex);
+    VerifyOrQuit(entryState == OT_MDNS_ENTRY_STATE_REGISTERED);
+    ValidateRegisteredServiceData(service, node0);
+
+    // Check that there is no more registered mDNS service
+    VerifyOrQuit(node0.Get<Dns::Multicast::Core>().GetNextService(*iterator, service, entryState) == kErrorNotFound);
+
+    node0.Get<Dns::Multicast::Core>().FreeIterator(*iterator);
+
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    Log("Disable Border Agent and validate that registered service is removed");
+
+    node0.Get<MeshCoP::BorderAgent>().SetEnabled(false);
+    VerifyOrQuit(!node0.Get<MeshCoP::BorderAgent>().IsEnabled());
+
+    nexus.AdvanceTime(30 * Time::kOneSecondInMsec);
+
+    iterator = node0.Get<Dns::Multicast::Core>().AllocateIterator();
+    VerifyOrQuit(iterator != nullptr);
+
+    VerifyOrQuit(node0.Get<Dns::Multicast::Core>().GetNextService(*iterator, service, entryState) == kErrorNotFound);
+
+    node0.Get<Dns::Multicast::Core>().FreeIterator(*iterator);
+
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    Log("Re-enable Border Agent and validate that service is registered again");
+
+    node0.Get<MeshCoP::BorderAgent>().SetEnabled(true);
+    VerifyOrQuit(node0.Get<MeshCoP::BorderAgent>().IsEnabled());
+
+    nexus.AdvanceTime(30 * Time::kOneSecondInMsec);
+
+    iterator = node0.Get<Dns::Multicast::Core>().AllocateIterator();
+    VerifyOrQuit(iterator != nullptr);
+
+    SuccessOrQuit(node0.Get<Dns::Multicast::Core>().GetNextService(*iterator, service, entryState));
+    Log("  HostName: %s", service.mHostName);
+    Log("  ServiceInstance: %s", service.mServiceInstance);
+    Log("  ServiceType: %s", service.mServiceType);
+    Log("  Port: %u", service.mPort);
+    Log("  TTL: %lu", ToUlong(service.mTtl));
+
+    VerifyOrQuit(StringMatch(service.mServiceType, "_meshcop._udp"));
+    VerifyOrQuit(StringStartsWith(service.mServiceInstance, "OpenThreadAgent"));
+    VerifyOrQuit(StringStartsWith(service.mHostName, "ot"));
+    VerifyOrQuit(service.mSubTypeLabelsLength == 0);
+    VerifyOrQuit(service.mPort == node0.Get<MeshCoP::BorderAgent>().GetUdpPort());
+    VerifyOrQuit(service.mTtl > 0);
+    VerifyOrQuit(service.mInfraIfIndex == kInfraIfIndex);
+    VerifyOrQuit(entryState == OT_MDNS_ENTRY_STATE_REGISTERED);
+    ValidateRegisteredServiceData(service, node0);
+    txtDataLengthWithNoVendorData = service.mTxtDataLength;
+
+    // Check that there is no more registered mDNS service
+    VerifyOrQuit(node0.Get<Dns::Multicast::Core>().GetNextService(*iterator, service, entryState) == kErrorNotFound);
+
+    node0.Get<Dns::Multicast::Core>().FreeIterator(*iterator);
+
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    Log("Set vendor TXT data and validate that it is included in the registered mDNS service");
+
+    node0.Get<BorderAgent>().SetVendorTxtData(kVendorTxtData, sizeof(kVendorTxtData));
+    nexus.AdvanceTime(5 * Time::kOneSecondInMsec);
+
+    iterator = node0.Get<Dns::Multicast::Core>().AllocateIterator();
+    VerifyOrQuit(iterator != nullptr);
+
+    SuccessOrQuit(node0.Get<Dns::Multicast::Core>().GetNextService(*iterator, service, entryState));
+    Log("  HostName: %s", service.mHostName);
+    Log("  ServiceInstance: %s", service.mServiceInstance);
+    Log("  ServiceType: %s", service.mServiceType);
+    Log("  Port: %u", service.mPort);
+    Log("  TTL: %lu", ToUlong(service.mTtl));
+
+    VerifyOrQuit(StringMatch(service.mServiceType, "_meshcop._udp"));
+    VerifyOrQuit(StringStartsWith(service.mServiceInstance, "OpenThreadAgent"));
+    VerifyOrQuit(StringStartsWith(service.mHostName, "ot"));
+    VerifyOrQuit(service.mSubTypeLabelsLength == 0);
+    VerifyOrQuit(service.mPort == node0.Get<MeshCoP::BorderAgent>().GetUdpPort());
+    VerifyOrQuit(service.mTtl > 0);
+    VerifyOrQuit(service.mInfraIfIndex == kInfraIfIndex);
+    VerifyOrQuit(entryState == OT_MDNS_ENTRY_STATE_REGISTERED);
+    ValidateRegisteredServiceData(service, node0);
+
+    // Check that vendor TXT data is included at the end of
+    // the registered service TXT data.
+    VerifyOrQuit(service.mTxtDataLength > txtDataLengthWithNoVendorData);
+    VerifyOrQuit(service.mTxtDataLength > sizeof(kVendorTxtData));
+    VerifyOrQuit(!memcmp(&service.mTxtData[service.mTxtDataLength - sizeof(kVendorTxtData)], kVendorTxtData,
+                         sizeof(kVendorTxtData)));
+
+    // Check that there is no more registered mDNS service
+    VerifyOrQuit(node0.Get<Dns::Multicast::Core>().GetNextService(*iterator, service, entryState) == kErrorNotFound);
+
+    node0.Get<Dns::Multicast::Core>().FreeIterator(*iterator);
+
+    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    Log("Clear vendor TXT data and validate that the registered mDNS service is updated accordingly");
+
+    node0.Get<BorderAgent>().SetVendorTxtData(nullptr, 0);
+    nexus.AdvanceTime(5 * Time::kOneSecondInMsec);
+
+    iterator = node0.Get<Dns::Multicast::Core>().AllocateIterator();
+    VerifyOrQuit(iterator != nullptr);
+
+    SuccessOrQuit(node0.Get<Dns::Multicast::Core>().GetNextService(*iterator, service, entryState));
+    Log("  HostName: %s", service.mHostName);
+    Log("  ServiceInstance: %s", service.mServiceInstance);
+    Log("  ServiceType: %s", service.mServiceType);
+    Log("  Port: %u", service.mPort);
+    Log("  TTL: %lu", ToUlong(service.mTtl));
+
+    VerifyOrQuit(StringMatch(service.mServiceType, "_meshcop._udp"));
+    VerifyOrQuit(StringStartsWith(service.mServiceInstance, "OpenThreadAgent"));
+    VerifyOrQuit(StringStartsWith(service.mHostName, "ot"));
+    VerifyOrQuit(service.mSubTypeLabelsLength == 0);
+    VerifyOrQuit(service.mPort == node0.Get<MeshCoP::BorderAgent>().GetUdpPort());
+    VerifyOrQuit(service.mTtl > 0);
+    VerifyOrQuit(service.mInfraIfIndex == kInfraIfIndex);
+    VerifyOrQuit(entryState == OT_MDNS_ENTRY_STATE_REGISTERED);
+    ValidateRegisteredServiceData(service, node0);
+    VerifyOrQuit(service.mTxtDataLength == txtDataLengthWithNoVendorData);
+
+    // Check that there is no more registered mDNS service
+    VerifyOrQuit(node0.Get<Dns::Multicast::Core>().GetNextService(*iterator, service, entryState) == kErrorNotFound);
+
+    node0.Get<Dns::Multicast::Core>().FreeIterator(*iterator);
 }
 
 } // namespace Nexus
@@ -882,7 +1380,8 @@ int main(void)
 {
     ot::Nexus::TestBorderAgent();
     ot::Nexus::TestBorderAgentEphemeralKey();
-    ot::Nexus::TestBorderAgentMeshCoPServiceChangedCallback();
+    ot::Nexus::TestBorderAgentTxtDataCallback();
+    ot::Nexus::TestBorderAgentServiceRegisteration();
     printf("All tests passed\n");
     return 0;
 }

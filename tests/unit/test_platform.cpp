@@ -700,6 +700,13 @@ otError otPlatUdpLeaveMulticastGroup(otUdpSocket        *aUdpSocket,
 #endif // OPENTHREAD_CONFIG_PLATFORM_UDP_ENABLE
 
 #if OPENTHREAD_CONFIG_DNS_UPSTREAM_QUERY_ENABLE
+bool otPlatDnsIsUpstreamQueryAvailable(otInstance *aInstance)
+{
+    OT_UNUSED_VARIABLE(aInstance);
+
+    return true;
+}
+
 void otPlatDnsStartUpstreamQuery(otInstance *aInstance, otPlatDnsUpstreamQuery *aTxn, const otMessage *aQuery)
 {
     OT_UNUSED_VARIABLE(aInstance);
@@ -961,6 +968,18 @@ OT_TOOL_WEAK void otPlatDnssdStopIp4AddressResolver(otInstance *aInstance, const
 {
     OT_UNUSED_VARIABLE(aInstance);
     OT_UNUSED_VARIABLE(aResolver);
+}
+
+OT_TOOL_WEAK void otPlatDnssdStartRecordQuerier(otInstance *aInstance, const otPlatDnssdRecordQuerier *aQuerier)
+{
+    OT_UNUSED_VARIABLE(aInstance);
+    OT_UNUSED_VARIABLE(aQuerier);
+}
+
+OT_TOOL_WEAK void otPlatDnssdStopRecordQuerier(otInstance *aInstance, const otPlatDnssdRecordQuerier *aQuerier)
+{
+    OT_UNUSED_VARIABLE(aInstance);
+    OT_UNUSED_VARIABLE(aQuerier);
 }
 
 #endif // OPENTHREAD_CONFIG_PLATFORM_DNSSD_ENABLE
