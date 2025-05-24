@@ -152,18 +152,7 @@ template <> otError SrpServer::Process<Cmd("auto")>(Arg aArgs[])
  */
 template <> otError SrpServer::Process<Cmd("domain")>(Arg aArgs[])
 {
-    otError error = OT_ERROR_NONE;
-
-    if (aArgs[0].IsEmpty())
-    {
-        OutputLine("%s", otSrpServerGetDomain(GetInstancePtr()));
-    }
-    else
-    {
-        error = otSrpServerSetDomain(GetInstancePtr(), aArgs[0].GetCString());
-    }
-
-    return error;
+    return ProcessGetSet(aArgs, otSrpServerGetDomain, otSrpServerSetDomain);
 }
 
 #if OPENTHREAD_CONFIG_SRP_SERVER_FAST_START_MODE_ENABLE
@@ -555,6 +544,18 @@ exit:
 }
 
 /**
+ * @cli srp server port (get)
+ * @code
+ * srp server port
+ * 53536
+ * Done
+ * @endcode
+ * @par api_copy
+ * #otSrpServerGetPort
+ */
+template <> otError SrpServer::Process<Cmd("port")>(Arg aArgs[]) { return ProcessGet(aArgs, otSrpServerGetPort); }
+
+/**
  * @cli srp server seqnum (get,set)
  * @code
  * srp server seqnum 20
@@ -575,22 +576,7 @@ exit:
  */
 template <> otError SrpServer::Process<Cmd("seqnum")>(Arg aArgs[])
 {
-    otError error = OT_ERROR_NONE;
-
-    if (aArgs[0].IsEmpty())
-    {
-        OutputLine("%u", otSrpServerGetAnycastModeSequenceNumber(GetInstancePtr()));
-    }
-    else
-    {
-        uint8_t sequenceNumber;
-
-        SuccessOrExit(error = aArgs[0].ParseAsUint8(sequenceNumber));
-        error = otSrpServerSetAnycastModeSequenceNumber(GetInstancePtr(), sequenceNumber);
-    }
-
-exit:
-    return error;
+    return ProcessGetSet(aArgs, otSrpServerGetAnycastModeSequenceNumber, otSrpServerSetAnycastModeSequenceNumber);
 }
 
 otError SrpServer::Process(Arg aArgs[])
@@ -613,6 +599,7 @@ otError SrpServer::Process(Arg aArgs[])
 #endif
         CmdEntry("host"),
         CmdEntry("lease"),
+        CmdEntry("port"),
         CmdEntry("seqnum"),
         CmdEntry("service"),
         CmdEntry("state"),
