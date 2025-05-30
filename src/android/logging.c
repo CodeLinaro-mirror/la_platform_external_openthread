@@ -55,9 +55,9 @@ void otPlatLog(otLogLevel aLogLevel, otLogRegion aLogRegion, const char *aFormat
         priority = ANDROID_LOG_FATAL;
         break;
     case OT_LOG_LEVEL_WARN:
+    case OT_LOG_LEVEL_NOTE:
         priority = ANDROID_LOG_WARN;
         break;
-    case OT_LOG_LEVEL_NOTE:
     case OT_LOG_LEVEL_INFO:
         priority = ANDROID_LOG_INFO;
         break;
