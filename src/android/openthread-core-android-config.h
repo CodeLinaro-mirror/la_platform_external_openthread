@@ -365,4 +365,40 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 // Enable multiple Adjacent Infrastructure Links (AILs) detection feature
 #define OPENTHREAD_CONFIG_BORDER_ROUTING_MULTI_AIL_DETECTION_ENABLE 1
 
+// Enable History Tracker module
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_ENABLE 1
+
+// Disables Network Info in History Tracker
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_NET_INFO_LIST_SIZE 0
+
+// Disables unicast IPv6 address in History Tracker
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_UNICAST_ADDRESS_LIST_SIZE 0
+
+// Disables multicast IPv6 address in History Tracker
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_MULTICAST_ADDRESS_LIST_SIZE 0
+
+// Disables RX list in History Tracker
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_RX_LIST_SIZE 0
+
+// Disables TX list in History Tracker
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_TX_LIST_SIZE 0
+
+// Disables exclusion of Thread Control message (e.g., MLE, TMF) from TX and RX history
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_EXCLUDE_THREAD_CONTROL_MESSAGES 0
+
+// Disables neighbor table list in History Tracker
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_NEIGHBOR_LIST_SIZE 0
+
+// Disables router table in History Tracker
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_ROUTER_LIST_SIZE 0
+
+// Disables On Mesh Prefix in History Tracker
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_ON_MESH_PREFIX_LIST_SIZE 0
+
+// Disables External Route list in History Tracker
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_EXTERNAL_ROUTE_LIST_SIZE 0
+
+// Enables Epskc events in History Tracker to collect Epskc journey stats
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_EPSKC_EVENT_SIZE 64
+
 #endif // OPENTHREAD_CORE_ANDROID_CONFIG_H_
