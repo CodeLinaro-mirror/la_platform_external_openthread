@@ -523,6 +523,8 @@ cc_library_static {
         // run below Android U (34).
         "-Wno-unguarded-availability",
         "-Wno-c99-extensions",
+        // Suppress warning in src/core/net/srp_client.cpp
+        "-Wno-implicit-fallthrough",
     ],
 
     vintf_fragments: ["src/android/thread_network_hal/device_manifest.xml"],
