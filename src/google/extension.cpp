@@ -75,7 +75,30 @@ public:
 
     bool Filter(Message &aMessage, const Ip6::Header &aHeader, bool &aForwardThread, bool &aForwardHost, bool &aReceive)
     {
-        return (MdnsPacketFilter(aMessage, aHeader, aForwardThread, aForwardHost, aReceive));
+        return (MdnsPacketFilter(aMessage, aHeader, aForwardThread, aForwardHost, aReceive) ||
+                Mldv2PacketFilter(aMessage, aHeader, aForwardThread, aForwardHost, aReceive));
+    }
+
+    bool Mldv2PacketFilter(Message           &aMessage,
+                           const Ip6::Header &aHeader,
+                           bool              &aForwardThread,
+                           bool              &aForwardHost,
+                           bool              &aReceive)
+    {
+        OT_UNUSED_VARIABLE(aMessage);
+
+        static constexpr otIp6Address kMldV2Multicast = {{{0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x16}}};
+
+        VerifyOrExit(aHeader.GetNextHeader() == Ip6::kProtoIcmp6 && aHeader.GetDestination() == kMldV2Multicast);
+
+        aForwardThread = false;
+        aForwardHost   = false;
+        aReceive       = false;
+
+        return true;
+
+    exit:
+        return false;
     }
 
     bool MdnsPacketFilter(Message           &aMessage,
