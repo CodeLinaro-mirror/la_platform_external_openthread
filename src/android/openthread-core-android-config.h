@@ -310,7 +310,7 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 #define OPENTHREAD_CONFIG_COMMISSIONER_ENABLE 0
 
 // Vendor extension module is not used on Android.
-#define OPENTHREAD_ENABLE_VENDOR_EXTENSION 0
+#define OPENTHREAD_ENABLE_VENDOR_EXTENSION 1
 
 // Allow longer input string of 1300 bytes for CLI commands.
 #define OPENTHREAD_CONFIG_CLI_MAX_LINE_LENGTH 1300

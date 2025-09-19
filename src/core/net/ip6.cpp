@@ -1188,7 +1188,10 @@ Error Ip6::HandleDatagram(OwnedPtr<Message> aMessagePtr, bool aIsReassembled)
         VerifyOrExit(!header.GetSource().IsLoopback() && !header.GetDestination().IsLoopback(), error = kErrorDrop);
     }
 
-    DetermineAction(*aMessagePtr, header, forwardThread, forwardHost, receive);
+    if (!mPacketFilter.IsSet() || !mPacketFilter.Invoke(*aMessagePtr, header, forwardThread, forwardHost, receive))
+    {
+        DetermineAction(*aMessagePtr, header, forwardThread, forwardHost, receive);
+    }
 
     aMessagePtr->SetOffset(sizeof(header));
 
