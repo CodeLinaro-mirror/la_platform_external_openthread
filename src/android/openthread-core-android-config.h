@@ -331,7 +331,7 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 #define OPENTHREAD_CONFIG_UPTIME_ENABLE 1
 
 // The Thread version is 1.3
-#define OPENTHREAD_CONFIG_THREAD_VERSION OT_THREAD_VERSION_1_3
+#define OPENTHREAD_CONFIG_THREAD_VERSION OT_THREAD_VERSION_1_4
 
 // Thread 1.2 Domain Unicast Address feature is not supported.
 #define OPENTHREAD_CONFIG_DUA_ENABLE 0
