@@ -39,11 +39,10 @@
 #include <openthread/ip6.h>
 
 #include "common/as_core_type.hpp"
+#include "common/bit_utils.hpp"
 #include "common/clearable.hpp"
 #include "common/encoding.hpp"
 #include "common/equatable.hpp"
-#include "common/num_utils.hpp"
-#include "common/numeric_limits.hpp"
 #include "common/string.hpp"
 #include "mac/mac_types.hpp"
 
@@ -61,6 +60,8 @@ namespace Ip6 {
  *
  * @{
  */
+
+class Prefix;
 
 /**
  * Represents the Network Prefix of an IPv6 address (most significant 64 bits of the address).
@@ -80,6 +81,16 @@ public:
      * @retval kErrorFailed   Failed to generate random ULA Network Prefix.
      */
     Error GenerateRandomUla(void);
+
+    /**
+     * Sets the Network Prefix from a given `Prefix`.
+     *
+     * @param[in] aPrefix  The prefix to use to set the Network Prefix.
+     *
+     * @retval kErrorNone          Successfully set the Network Prefix from @p aPrefix.
+     * @retval kErrorInvalidArgs   The @p aPrefix length is not valid (must be `kLength`).
+     */
+    Error SetFrom(const Prefix &aPrefix);
 
 } OT_TOOL_PACKED_END;
 
@@ -258,17 +269,6 @@ public:
      * @returns The size (in bytes) of the prefix.
      */
     static uint8_t SizeForLength(uint8_t aLength) { return BytesForBitSize(aLength); }
-
-    /**
-     * Returns the number of IPv6 prefix bits that match.
-     *
-     * @param[in]  aPrefixA     A pointer to a byte array containing a first prefix.
-     * @param[in]  aPrefixB     A pointer to a byte array containing a second prefix.
-     * @param[in]  aMaxSize     Number of bytes of the two prefixes.
-     *
-     * @returns The number of prefix bits that match.
-     */
-    static uint8_t MatchLength(const uint8_t *aPrefixA, const uint8_t *aPrefixB, uint8_t aMaxSize);
 
     /**
      * Indicates whether or not a given prefix length is valid for use as a NAT64 prefix.

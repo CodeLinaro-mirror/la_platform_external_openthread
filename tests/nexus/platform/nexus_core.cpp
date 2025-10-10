@@ -32,20 +32,22 @@
 namespace ot {
 namespace Nexus {
 
-Core *Core::sCore = nullptr;
+Core *Core::sCore  = nullptr;
+bool  Core::sInUse = false;
 
 Core::Core(void)
     : mNow(0)
     , mCurNodeId(0)
     , mPendingAction(false)
 {
-    VerifyOrQuit(sCore == nullptr);
-    sCore = this;
+    VerifyOrQuit(!sInUse);
+    sCore  = this;
+    sInUse = true;
 
     mNextAlarmTime = mNow.GetDistantFuture();
 }
 
-Core::~Core(void) { sCore = nullptr; }
+Core::~Core(void) { sInUse = false; }
 
 Node &Core::CreateNode(void)
 {
@@ -100,6 +102,10 @@ void Core::Process(Node &aNode)
     otTaskletsProcess(&aNode.GetInstance());
 
     ProcessRadio(aNode);
+    ProcessMdns(aNode);
+#if OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE
+    ProcessTrel(aNode);
+#endif
 
     if (aNode.mAlarm.ShouldTrigger(mNow))
     {
@@ -202,6 +208,51 @@ void Core::ProcessRadio(Node &aNode)
 exit:
     return;
 }
+
+void Core::ProcessMdns(Node &aNode)
+{
+    Mdns::AddressInfo senderAddress;
+
+    aNode.mMdns.GetAddress(senderAddress);
+
+    for (Mdns::PendingTx &pendingTx : aNode.mMdns.mPendingTxList)
+    {
+        for (Node &rxNode : mNodes)
+        {
+            rxNode.mMdns.Receive(rxNode.GetInstance(), pendingTx, senderAddress);
+        }
+    }
+
+    aNode.mMdns.mPendingTxList.Free();
+}
+
+#if OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE
+
+void Core::ProcessTrel(Node &aNode)
+{
+    Ip6::SockAddr senderSockAddr;
+    Ip6::SockAddr rxNodeSockAddr;
+
+    aNode.GetTrelSockAddr(senderSockAddr);
+
+    for (Trel::PendingTx &pendingTx : aNode.mTrel.mPendingTxList)
+    {
+        for (Node &rxNode : mNodes)
+        {
+            rxNode.GetTrelSockAddr(rxNodeSockAddr);
+
+            if (pendingTx.mDestSockAddr == rxNodeSockAddr)
+            {
+                rxNode.mTrel.Receive(rxNode.GetInstance(), pendingTx.mPayloadData, senderSockAddr);
+                break;
+            }
+        }
+    }
+
+    aNode.mTrel.mPendingTxList.Free();
+}
+
+#endif // OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE
 
 } // namespace Nexus
 } // namespace ot

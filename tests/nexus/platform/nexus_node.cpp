@@ -32,6 +32,26 @@
 namespace ot {
 namespace Nexus {
 
+void Node::Reset(void)
+{
+    Instance *instance = &GetInstance();
+    uint32_t  id       = GetId();
+
+    mRadio.Reset();
+    mAlarm.Reset();
+    mMdns.Reset();
+    mPendingTasklet = false;
+#if OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE
+    mTrel.Reset();
+#endif
+
+    instance->~Instance();
+
+    instance = new (instance) Instance();
+    instance->SetId(id);
+    instance->AfterInit();
+}
+
 void Node::Form(void)
 {
     MeshCoP::Dataset::Info datasetInfo;
@@ -82,6 +102,14 @@ void Node::AllowList(Node &aNode)
 }
 
 void Node::UnallowList(Node &aNode) { Get<Mac::Filter>().RemoveAddress(aNode.Get<Mac::Mac>().GetExtAddress()); }
+
+#if OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE
+void Node::GetTrelSockAddr(Ip6::SockAddr &aSockAddr) const
+{
+    aSockAddr.SetAddress(mMdns.mIfAddresses[0]);
+    aSockAddr.SetPort(mTrel.mUdpPort);
+}
+#endif
 
 } // namespace Nexus
 } // namespace ot

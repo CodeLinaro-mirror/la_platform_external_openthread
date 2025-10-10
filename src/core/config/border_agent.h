@@ -76,7 +76,8 @@
  * Define to 1 to enable ephemeral key mechanism and its APIs in Border Agent.
  */
 #ifndef OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE
-#define OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE (OPENTHREAD_CONFIG_THREAD_VERSION >= OT_THREAD_VERSION_1_4)
+#define OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE \
+    (OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE && (OPENTHREAD_CONFIG_THREAD_VERSION >= OT_THREAD_VERSION_1_4))
 #endif
 
 /**
@@ -119,6 +120,18 @@
  */
 #ifndef OPENTHREAD_CONFIG_BORDER_AGENT_MESHCOP_SERVICE_BASE_NAME
 #define OPENTHREAD_CONFIG_BORDER_AGENT_MESHCOP_SERVICE_BASE_NAME "OpenThread BR (unspecified vendor) "
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_BORDER_AGENT_TRACKER_ENABLE
+ *
+ * Define to 1 to enable the Border Agent Tracker feature.
+ *
+ * The Border Agent Tracker feature discovers and tracks Border Agents on the infrastructure network. This feature
+ * requires either `OPENTHREAD_CONFIG_PLATFORM_DNSSD_ENABLE` or `OPENTHREAD_CONFIG_MULTICAST_DNS_ENABLE` to be enabled.
+ */
+#ifndef OPENTHREAD_CONFIG_BORDER_AGENT_TRACKER_ENABLE
+#define OPENTHREAD_CONFIG_BORDER_AGENT_TRACKER_ENABLE 0
 #endif
 
 /**
