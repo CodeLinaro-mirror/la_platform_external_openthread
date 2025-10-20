@@ -35,6 +35,7 @@ set(COMMON_SOURCES
     api/backbone_router_ftd_api.cpp
     api/ble_secure_api.cpp
     api/border_agent_api.cpp
+    api/border_agent_tracker_api.cpp
     api/border_router_api.cpp
     api/border_routing_api.cpp
     api/channel_manager_api.cpp
@@ -71,6 +72,7 @@ set(COMMON_SOURCES
     api/netdata_publisher_api.cpp
     api/netdiag_api.cpp
     api/network_time_api.cpp
+    api/p2p_api.cpp
     api/ping_sender_api.cpp
     api/radio_stats_api.cpp
     api/random_crypto_api.cpp
@@ -94,13 +96,19 @@ set(COMMON_SOURCES
     backbone_router/bbr_manager.cpp
     backbone_router/multicast_listeners_table.cpp
     backbone_router/ndproxy_table.cpp
+    border_router/br_log.cpp
+    border_router/br_tracker.cpp
+    border_router/br_types.cpp
+    border_router/dhcp6_pd_client.cpp
     border_router/infra_if.cpp
     border_router/routing_manager.cpp
+    border_router/rx_ra_tracker.cpp
     coap/coap.cpp
     coap/coap_message.cpp
     coap/coap_secure.cpp
     common/appender.cpp
     common/binary_search.cpp
+    common/bit_utils.cpp
     common/crc.cpp
     common/data.cpp
     common/error.cpp
@@ -150,6 +158,7 @@ set(COMMON_SOURCES
     mac/wakeup_tx_scheduler.cpp
     meshcop/announce_begin_client.cpp
     meshcop/border_agent.cpp
+    meshcop/border_agent_tracker.cpp
     meshcop/commissioner.cpp
     meshcop/dataset.cpp
     meshcop/dataset_manager.cpp
@@ -170,6 +179,7 @@ set(COMMON_SOURCES
     net/checksum.cpp
     net/dhcp6_client.cpp
     net/dhcp6_server.cpp
+    net/dhcp6_types.cpp
     net/dns_client.cpp
     net/dns_dso.cpp
     net/dns_platform.cpp
@@ -188,6 +198,7 @@ set(COMMON_SOURCES
     net/nd6.cpp
     net/nd_agent.cpp
     net/netif.cpp
+    net/slaac_address.cpp
     net/sntp_client.cpp
     net/socket.cpp
     net/srp_advertising_proxy.cpp
@@ -225,8 +236,10 @@ set(COMMON_SOURCES
     thread/mesh_forwarder.cpp
     thread/mesh_forwarder_ftd.cpp
     thread/mesh_forwarder_mtd.cpp
+    thread/message_framer.cpp
     thread/mle.cpp
     thread/mle_ftd.cpp
+    thread/mle_p2p.cpp
     thread/mle_tlvs.cpp
     thread/mle_types.cpp
     thread/mlr_manager.cpp
@@ -244,6 +257,8 @@ set(COMMON_SOURCES
     thread/network_diagnostic.cpp
     thread/network_diagnostic_tlvs.cpp
     thread/panid_query_server.cpp
+    thread/peer.cpp
+    thread/peer_table.cpp
     thread/radio_selector.cpp
     thread/router.cpp
     thread/router_table.cpp
@@ -266,7 +281,6 @@ set(COMMON_SOURCES
     utils/parse_cmdline.cpp
     utils/ping_sender.cpp
     utils/power_calibration.cpp
-    utils/slaac_address.cpp
     utils/srp_client_buffers.cpp
     utils/verhoeff_checksum.cpp
 )
@@ -306,6 +320,7 @@ set(RADIO_COMMON_SOURCES
     radio/radio_callbacks.cpp
     radio/radio_platform.cpp
     thread/link_quality.cpp
+    utils/otns.cpp
     utils/parse_cmdline.cpp
     utils/power_calibration.cpp
 )

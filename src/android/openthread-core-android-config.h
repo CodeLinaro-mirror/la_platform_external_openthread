@@ -310,7 +310,7 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 #define OPENTHREAD_CONFIG_COMMISSIONER_ENABLE 0
 
 // Vendor extension module is not used on Android.
-#define OPENTHREAD_ENABLE_VENDOR_EXTENSION 0
+#define OPENTHREAD_ENABLE_VENDOR_EXTENSION 1
 
 // Allow longer input string of 1300 bytes for CLI commands.
 #define OPENTHREAD_CONFIG_CLI_MAX_LINE_LENGTH 1300
@@ -331,7 +331,7 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 #define OPENTHREAD_CONFIG_UPTIME_ENABLE 1
 
 // The Thread version is 1.3
-#define OPENTHREAD_CONFIG_THREAD_VERSION OT_THREAD_VERSION_1_3
+#define OPENTHREAD_CONFIG_THREAD_VERSION OT_THREAD_VERSION_1_4
 
 // Thread 1.2 Domain Unicast Address feature is not supported.
 #define OPENTHREAD_CONFIG_DUA_ENABLE 0
@@ -368,37 +368,37 @@ static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS * (32 * sizeof(void *)) ==
 // Enable History Tracker module
 #define OPENTHREAD_CONFIG_HISTORY_TRACKER_ENABLE 1
 
-// Disables Network Info in History Tracker
-#define OPENTHREAD_CONFIG_HISTORY_TRACKER_NET_INFO_LIST_SIZE 0
+// Specifies the maximum number of entries in Network Info (role, mode, partition ID, RLOC16) history list.
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_NET_INFO_LIST_SIZE 32
 
-// Disables unicast IPv6 address in History Tracker
-#define OPENTHREAD_CONFIG_HISTORY_TRACKER_UNICAST_ADDRESS_LIST_SIZE 0
+// Specifies the maximum number of entries in unicast IPv6 address history list.
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_UNICAST_ADDRESS_LIST_SIZE 20
 
-// Disables multicast IPv6 address in History Tracker
-#define OPENTHREAD_CONFIG_HISTORY_TRACKER_MULTICAST_ADDRESS_LIST_SIZE 0
+// Specifies the maximum number of entries in multicast IPv6 address history list.
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_MULTICAST_ADDRESS_LIST_SIZE 20
 
-// Disables RX list in History Tracker
-#define OPENTHREAD_CONFIG_HISTORY_TRACKER_RX_LIST_SIZE 0
+// Specifies the maximum number of entries in RX history list.
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_RX_LIST_SIZE 32
 
-// Disables TX list in History Tracker
-#define OPENTHREAD_CONFIG_HISTORY_TRACKER_TX_LIST_SIZE 0
+// Specifies the maximum number of entries in TX history list.
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_TX_LIST_SIZE 32
 
-// Disables exclusion of Thread Control message (e.g., MLE, TMF) from TX and RX history
-#define OPENTHREAD_CONFIG_HISTORY_TRACKER_EXCLUDE_THREAD_CONTROL_MESSAGES 0
+// Define as 1 to exclude Thread Control message (e.g., MLE, TMF) from TX and RX history.
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_EXCLUDE_THREAD_CONTROL_MESSAGES 1
 
-// Disables neighbor table list in History Tracker
-#define OPENTHREAD_CONFIG_HISTORY_TRACKER_NEIGHBOR_LIST_SIZE 0
+// Specifies the maximum number of entries in neighbor table history list.
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_NEIGHBOR_LIST_SIZE 64
 
-// Disables router table in History Tracker
-#define OPENTHREAD_CONFIG_HISTORY_TRACKER_ROUTER_LIST_SIZE 0
+// Specifies the maximum number of entries in router table history list.
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_ROUTER_LIST_SIZE 256
 
-// Disables On Mesh Prefix in History Tracker
-#define OPENTHREAD_CONFIG_HISTORY_TRACKER_ON_MESH_PREFIX_LIST_SIZE 0
+// Specifies the maximum number of entries in Network Data On Mesh Prefix history list.
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_ON_MESH_PREFIX_LIST_SIZE 32
 
-// Disables External Route list in History Tracker
-#define OPENTHREAD_CONFIG_HISTORY_TRACKER_EXTERNAL_ROUTE_LIST_SIZE 0
+// Specifies the maximum number of entries in Network Data External Route history list.
+#define OPENTHREAD_CONFIG_HISTORY_TRACKER_EXTERNAL_ROUTE_LIST_SIZE 32
 
-// Enables Epskc events in History Tracker to collect Epskc journey stats
+// Specifies the maximum number of entries in Border Agent ePSKc history list.
 #define OPENTHREAD_CONFIG_HISTORY_TRACKER_EPSKC_EVENT_SIZE 64
 
 #endif // OPENTHREAD_CORE_ANDROID_CONFIG_H_

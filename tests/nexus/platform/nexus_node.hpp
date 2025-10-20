@@ -33,14 +33,35 @@
 
 #include "nexus_alarm.hpp"
 #include "nexus_core.hpp"
+#include "nexus_mdns.hpp"
 #include "nexus_radio.hpp"
 #include "nexus_settings.hpp"
+#include "nexus_trel.hpp"
 #include "nexus_utils.hpp"
 
 namespace ot {
 namespace Nexus {
 
-class Node : public Heap::Allocatable<Node>, public LinkedListEntry<Node>, private Instance
+class Platform
+{
+public:
+    Radio    mRadio;
+    Alarm    mAlarm;
+    Mdns     mMdns;
+    Settings mSettings;
+#if OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE
+    Trel mTrel;
+#endif
+    bool mPendingTasklet;
+
+protected:
+    Platform(void)
+        : mPendingTasklet(false)
+    {
+    }
+};
+
+class Node : public Platform, public Heap::Allocatable<Node>, public LinkedListEntry<Node>, private Instance
 {
     friend class Heap::Allocatable<Node>;
 
@@ -53,10 +74,14 @@ public:
         kAsSed,
     };
 
+    void Reset(void);
     void Form(void);
     void Join(Node &aNode, JoinMode aJoinMode = kAsFtd);
     void AllowList(Node &aNode);
     void UnallowList(Node &aNode);
+#if OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE
+    void GetTrelSockAddr(Ip6::SockAddr &aSockAddr) const;
+#endif
 
     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -76,11 +101,16 @@ public:
 
     static Node &From(otInstance *aInstance) { return static_cast<Node &>(*aInstance); }
 
-    Node    *mNext;
-    Radio    mRadio;
-    Alarm    mAlarm;
-    Settings mSettings;
-    bool     mPendingTasklet;
+    using Platform::mAlarm;
+    using Platform::mMdns;
+    using Platform::mPendingTasklet;
+    using Platform::mRadio;
+    using Platform::mSettings;
+#if OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE
+    using Platform::mTrel;
+#endif
+
+    Node *mNext;
 
 private:
     Node(void) = default;

@@ -85,6 +85,7 @@ namespace Ip6 {
  * @defgroup core-ip6-ip6 IPv6
  * @defgroup core-ip6-mpl MPL
  * @defgroup core-ip6-netif Network Interfaces
+ * @defgroup core-ip6-slaac SLAAC
  *
  * @}
  */
@@ -343,16 +344,37 @@ public:
 
 #endif
 
+    /**
+     * A filter that controls how an IPv6 packet should be dispatched.
+     *
+     * @retval TRUE     The dispatched of this packet is finalized and should not be changed.
+     * @retval FALSE    The dispatched of this packet is not finalized, and may be further evaluated by other filters.
+     */
+    typedef bool (*PacketFilter)(void         *aContext,
+                                 Message      &aMessage,
+                                 const Header &aHeader,
+                                 bool         &aForwardThread,
+                                 bool         &aForwardHost,
+                                 bool         &aReceive);
+
+    void SetPacketFilter(void *aContext, PacketFilter aPacketFilter) { mPacketFilter.Set(aPacketFilter, aContext); }
+
 private:
     static constexpr uint8_t kDefaultHopLimit   = OPENTHREAD_CONFIG_IP6_HOP_LIMIT_DEFAULT;
     static constexpr uint8_t kReassemblyTimeout = OPENTHREAD_CONFIG_IP6_REASSEMBLY_TIMEOUT;
 
     static constexpr uint16_t kMinimalMtu = 1280;
 
+    enum MessageOwnership : uint8_t
+    {
+        kTakeMessageCustody,
+        kCopyMessageToUse,
+    };
+
     static uint8_t PriorityToDscp(Message::Priority aPriority);
     static Error   TakeOrCopyMessagePtr(OwnedPtr<Message> &aTargetPtr,
                                         OwnedPtr<Message> &aMessagePtr,
-                                        Message::Ownership aMessageOwnership);
+                                        MessageOwnership   aMessageOwnership);
 
     void  EnqueueDatagram(Message &aMessage);
     void  HandleSendQueue(void);
@@ -365,7 +387,7 @@ private:
                      const Header      &aHeader,
                      uint8_t            aIpProto,
                      bool               aReceive,
-                     Message::Ownership aMessageOwnership);
+                     MessageOwnership   aMessageOwnership);
     Error HandleExtensionHeaders(OwnedPtr<Message> &aMessagePtr,
                                  const Header      &aHeader,
                                  uint8_t           &aNextHeader,
@@ -387,10 +409,12 @@ private:
     Error Receive(Header            &aIp6Header,
                   OwnedPtr<Message> &aMessagePtr,
                   uint8_t            aIpProto,
-                  Message::Ownership aMessageOwnership);
+                  MessageOwnership   aMessageOwnership);
 #if OPENTHREAD_CONFIG_IP6_BR_COUNTERS_ENABLE
     void UpdateBorderRoutingCounters(const Header &aHeader, uint16_t aMessageLength, bool aIsInbound);
 #endif
+
+    Callback<PacketFilter, kContextAsFirstArg> mPacketFilter;
 
     using SendQueueTask = TaskletIn<Ip6, &Ip6::HandleSendQueue>;
 
@@ -481,7 +505,7 @@ public:
      *
      * @returns The IPv6 Payload Length value.
      */
-    uint8_t GetIpLength(void) const { return mIp6Header.GetPayloadLength(); }
+    uint16_t GetIpLength(void) const { return mIp6Header.GetPayloadLength(); }
 
     /**
      * Returns the IPv6 Hop Limit value.

@@ -65,6 +65,7 @@ FakePlatform::FakePlatform()
     assert(sPlatform == nullptr);
     sPlatform = this;
 
+    fprintf(stderr, "fake platform start\r\n");
     mTransmitFrame.mPsdu = mTransmitBuffer;
 
 #if OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_ENABLE
@@ -164,7 +165,7 @@ void FakePlatform::ProcessSchedules(uint64_t &aTimeout)
 
     if (alarm == &guard)
     {
-        // nonthing scheduled within this period.
+        // nothing scheduled within this period.
     }
     else if (alarm == &mReceiveAtEnd)
     {
@@ -536,6 +537,8 @@ bool otPlatBleSupportsMultiRadio(otInstance *) { return false; }
 
 otError otPlatBleGapAdvSetData(otInstance *, uint8_t *, uint16_t) { return OT_ERROR_NONE; }
 
+otError otPlatBleGapAdvUpdateData(otInstance *, uint8_t *, uint16_t) { return OT_ERROR_NONE; }
+
 OT_TOOL_WEAK otError otPlatRadioAddCalibratedPower(otInstance *, uint8_t, int16_t, const uint8_t *, uint16_t)
 {
     return OT_ERROR_NONE;
@@ -607,5 +610,10 @@ otError otPlatUdpLeaveMulticastGroup(otUdpSocket *, otNetifIdentifier, const otI
 {
     return OT_ERROR_NOT_IMPLEMENTED;
 }
+
+#if OPENTHREAD_CONFIG_OTNS_ENABLE
+void otPlatOtnsStatus(const char *aStatus) { OT_UNUSED_VARIABLE(aStatus); }
+#endif
+
 void otPlatAssertFail(const char *, int) {}
 } // extern "C"

@@ -547,7 +547,7 @@ void InitTest(void)
     // Disable the Border Agent to prevent its attempt to
     // register the `_meshcop._udp` service from
     // interfering with this test.
-    sInstance->Get<MeshCoP::BorderAgent>().SetEnabled(false);
+    sInstance->Get<MeshCoP::BorderAgent::Manager>().SetEnabled(false);
 #endif
 
     // Configure the `Dnssd` module to use `otPlatDnssd` APIs.
@@ -611,9 +611,9 @@ void PrepareService1(Srp::Client::Service &aService)
     static const char          kTxtKey3[]       = "D";
     static const uint8_t       kTxtValue3[]     = {0};
     static const otDnsTxtEntry kTxtEntries[]    = {
-           {kTxtKey1, kTxtValue1, sizeof(kTxtValue1)},
-           {kTxtKey2, kTxtValue2, sizeof(kTxtValue2)},
-           {kTxtKey3, kTxtValue3, sizeof(kTxtValue3)},
+        {kTxtKey1, kTxtValue1, sizeof(kTxtValue1)},
+        {kTxtKey2, kTxtValue2, sizeof(kTxtValue2)},
+        {kTxtKey3, kTxtValue3, sizeof(kTxtValue3)},
     };
 
     memset(&aService, 0, sizeof(aService));

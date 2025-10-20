@@ -98,6 +98,21 @@ void Notifier::EmitEvents(void)
     // Emit events to core internal modules
 
     Get<Mle::Mle>().HandleNotifierEvents(events);
+#if OPENTHREAD_CONFIG_TMF_NETDATA_SERVICE_ENABLE
+    Get<NetworkData::Service::Manager>().HandleNotifierEvents(events);
+#endif
+#if (OPENTHREAD_CONFIG_THREAD_VERSION >= OT_THREAD_VERSION_1_2)
+    Get<BackboneRouter::Leader>().HandleNotifierEvents(events);
+#endif
+#if OPENTHREAD_CONFIG_DHCP6_SERVER_ENABLE
+    Get<Dhcp6::Server>().HandleNotifierEvents(events);
+#endif
+#if OPENTHREAD_CONFIG_NEIGHBOR_DISCOVERY_AGENT_ENABLE
+    Get<NeighborDiscovery::Agent>().HandleNotifierEvents(events);
+#endif
+#if OPENTHREAD_CONFIG_DHCP6_CLIENT_ENABLE
+    Get<Dhcp6::Client>().HandleNotifierEvents(events);
+#endif
     Get<EnergyScanServer>().HandleNotifierEvents(events);
 #if OPENTHREAD_FTD
     Get<MeshCoP::JoinerRouter>().HandleNotifierEvents(events);
@@ -116,7 +131,7 @@ void Notifier::EmitEvents(void)
     Get<AnnounceSender>().HandleNotifierEvents(events);
 #endif
 #if OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE
-    Get<MeshCoP::BorderAgent>().HandleNotifierEvents(events);
+    Get<MeshCoP::BorderAgent::Manager>().HandleNotifierEvents(events);
 #endif
 #if OPENTHREAD_CONFIG_MLR_ENABLE || (OPENTHREAD_FTD && OPENTHREAD_CONFIG_TMF_PROXY_MLR_ENABLE)
     Get<MlrManager>().HandleNotifierEvents(events);
@@ -131,7 +146,7 @@ void Notifier::EmitEvents(void)
     Get<TimeSync>().HandleNotifierEvents(events);
 #endif
 #if OPENTHREAD_CONFIG_IP6_SLAAC_ENABLE
-    Get<Utils::Slaac>().HandleNotifierEvents(events);
+    Get<Ip6::Slaac>().HandleNotifierEvents(events);
 #endif
 #if OPENTHREAD_CONFIG_JAM_DETECTION_ENABLE
     Get<Utils::JamDetector>().HandleNotifierEvents(events);
@@ -140,13 +155,16 @@ void Notifier::EmitEvents(void)
     Get<Utils::Otns>().HandleNotifierEvents(events);
 #endif
 #if OPENTHREAD_CONFIG_HISTORY_TRACKER_ENABLE
-    Get<Utils::HistoryTracker>().HandleNotifierEvents(events);
+    Get<HistoryTracker::Local>().HandleNotifierEvents(events);
 #endif
 #if OPENTHREAD_ENABLE_VENDOR_EXTENSION
     Get<Extension::ExtensionBase>().HandleNotifierEvents(events);
 #endif
 #if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
     Get<BorderRouter::RoutingManager>().HandleNotifierEvents(events);
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_TRACK_PEER_BR_INFO_ENABLE
+    Get<BorderRouter::NetDataBrTracker>().HandleNotifierEvents(events);
+#endif
 #endif
 #if OPENTHREAD_CONFIG_SRP_CLIENT_ENABLE
     Get<Srp::Client>().HandleNotifierEvents(events);
