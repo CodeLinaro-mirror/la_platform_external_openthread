@@ -453,6 +453,7 @@ filegroup {
     name: "openthread_platform_posix_srcs",
     srcs: [
         "src/android/logging.c",
+        "src/google/extension.cpp",
         "src/posix/platform/alarm.cpp",
         "src/posix/platform/backtrace.cpp",
         "src/posix/platform/configuration.cpp",

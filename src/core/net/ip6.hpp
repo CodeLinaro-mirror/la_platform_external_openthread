@@ -343,6 +343,21 @@ public:
 
 #endif
 
+    /**
+     * A filter that controls how an IPv6 packet should be dispatched.
+     *
+     * @retval TRUE     The dispatched of this packet is finalized and should not be changed.
+     * @retval FALSE    The dispatched of this packet is not finalized, and may be further evaluated by other filters.
+     */
+    typedef bool (*PacketFilter)(void         *aContext,
+                                 Message      &aMessage,
+                                 const Header &aHeader,
+                                 bool         &aForwardThread,
+                                 bool         &aForwardHost,
+                                 bool         &aReceive);
+
+    void SetPacketFilter(void *aContext, PacketFilter aPacketFilter) { mPacketFilter.Set(aPacketFilter, aContext); }
+
 private:
     static constexpr uint8_t kDefaultHopLimit   = OPENTHREAD_CONFIG_IP6_HOP_LIMIT_DEFAULT;
     static constexpr uint8_t kReassemblyTimeout = OPENTHREAD_CONFIG_IP6_REASSEMBLY_TIMEOUT;
@@ -391,6 +406,8 @@ private:
 #if OPENTHREAD_CONFIG_IP6_BR_COUNTERS_ENABLE
     void UpdateBorderRoutingCounters(const Header &aHeader, uint16_t aMessageLength, bool aIsInbound);
 #endif
+
+    Callback<PacketFilter, kContextAsFirstArg> mPacketFilter;
 
     using SendQueueTask = TaskletIn<Ip6, &Ip6::HandleSendQueue>;
 
