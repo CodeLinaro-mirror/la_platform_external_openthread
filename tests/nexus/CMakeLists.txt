@@ -42,10 +42,13 @@ set(COMMON_COMPILE_OPTIONS
 add_library(ot-nexus-platform
     platform/nexus_alarm.cpp
     platform/nexus_core.cpp
+    platform/nexus_infra_if.cpp
+    platform/nexus_mdns.cpp
     platform/nexus_misc.cpp
     platform/nexus_node.cpp
     platform/nexus_radio.cpp
     platform/nexus_settings.cpp
+    platform/nexus_trel.cpp
 )
 
 target_include_directories(ot-nexus-platform
@@ -109,6 +112,10 @@ endmacro()
 #----------------------------------------------------------------------------------------------------------------------
 
 ot_nexus_test(border_agent)
+ot_nexus_test(border_agent_tracker)
 ot_nexus_test(dtls)
 ot_nexus_test(form_join)
+ot_nexus_test(full_network_reset)
 ot_nexus_test(large_network)
+ot_nexus_test(nat64_translator)
+ot_nexus_test(trel)

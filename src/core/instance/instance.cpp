@@ -84,6 +84,9 @@ Instance::Instance(void)
 #if OPENTHREAD_CONFIG_UPTIME_ENABLE
     , mUptime(*this)
 #endif
+#if OPENTHREAD_CONFIG_OTNS_ENABLE
+    , mOtns(*this)
+#endif
 #if OPENTHREAD_MTD || OPENTHREAD_FTD
     , mNotifier(*this)
     , mTimeTicker(*this)
@@ -94,6 +97,9 @@ Instance::Instance(void)
     // DNS-SD (mDNS) platform is initialized early to
     // allow other modules to use it.
     , mDnssd(*this)
+#endif
+#if OPENTHREAD_CONFIG_MULTICAST_DNS_ENABLE
+    , mMdnsCore(*this)
 #endif
 #if OPENTHREAD_CONFIG_PLATFORM_KEY_REFERENCES_ENABLE
     , mCryptoStorageKeyRefManager(*this)
@@ -128,9 +134,6 @@ Instance::Instance(void)
 #if OPENTHREAD_CONFIG_DNS_DSO_ENABLE
     , mDnsDso(*this)
 #endif
-#if OPENTHREAD_CONFIG_MULTICAST_DNS_ENABLE
-    , mMdnsCore(*this)
-#endif
 #if OPENTHREAD_CONFIG_SNTP_CLIENT_ENABLE
     , mSntpClient(*this)
 #endif
@@ -145,6 +148,7 @@ Instance::Instance(void)
     , mKeyManager(*this)
     , mLowpan(*this)
     , mMac(*this)
+    , mMessageFramer(*this)
     , mMeshForwarder(*this)
     , mMle(*this)
     , mDiscoverScanner(*this)
@@ -168,7 +172,13 @@ Instance::Instance(void)
     , mNetworkDiagnosticClient(*this)
 #endif
 #if OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE
-    , mBorderAgent(*this)
+    , mBorderAgentManager(*this)
+#endif
+#if OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE && OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE
+    , mBorderAgentEphemeralKeyManager(*this)
+#endif
+#if OPENTHREAD_CONFIG_BORDER_AGENT_TRACKER_ENABLE
+    , mBorderAgentTracker(*this)
 #endif
 #if OPENTHREAD_CONFIG_COMMISSIONER_ENABLE && OPENTHREAD_FTD
     , mCommissioner(*this)
@@ -231,7 +241,8 @@ Instance::Instance(void)
     , mApplicationCoapSecure(*this, kWithLinkSecurity)
 #endif
 #if OPENTHREAD_CONFIG_BLE_TCAT_ENABLE
-    , mApplicationBleSecure(*this)
+    , mBleSecure(*this)
+    , mTcatAgent(*this)
 #endif
 #if OPENTHREAD_CONFIG_PING_SENDER_ENABLE
     , mPingSender(*this)
@@ -247,7 +258,7 @@ Instance::Instance(void)
     , mMeshDiag(*this)
 #endif
 #if OPENTHREAD_CONFIG_HISTORY_TRACKER_ENABLE
-    , mHistoryTracker(*this)
+    , mHistoryTrackerLocal(*this)
 #endif
 #if OPENTHREAD_CONFIG_LINK_METRICS_MANAGER_ENABLE
     , mLinkMetricsManager(*this)
@@ -258,11 +269,15 @@ Instance::Instance(void)
 #if OPENTHREAD_CONFIG_ANNOUNCE_SENDER_ENABLE
     , mAnnounceSender(*this)
 #endif
-#if OPENTHREAD_CONFIG_OTNS_ENABLE
-    , mOtns(*this)
-#endif
 #if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+    , mRxRaTracker(*this)
     , mRoutingManager(*this)
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_TRACK_PEER_BR_INFO_ENABLE
+    , mNetDataBrTracker(*this)
+#endif
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_DHCP6_PD_ENABLE && OPENTHREAD_CONFIG_BORDER_ROUTING_DHCP6_PD_CLIENT_ENABLE
+    , mDhcp6PdClient(*this)
+#endif
 #endif
 #if OPENTHREAD_CONFIG_NAT64_TRANSLATOR_ENABLE
     , mNat64Translator(*this)
@@ -427,10 +442,9 @@ void Instance::Finalize(void)
     mIsInitialized = false;
 
 #if OPENTHREAD_MTD || OPENTHREAD_FTD
-    IgnoreError(otThreadSetEnabled(this, false));
-    IgnoreError(otIp6SetEnabled(this, false));
-    IgnoreError(otLinkSetEnabled(this, false));
-
+    Get<Mle::Mle>().Stop();
+    Get<ThreadNetif>().Down();
+    Get<Mac::Mac>().SetEnabled(false);
 #if OPENTHREAD_CONFIG_PLATFORM_KEY_REFERENCES_ENABLE
     Get<KeyManager>().DestroyTemporaryKeys();
 #endif

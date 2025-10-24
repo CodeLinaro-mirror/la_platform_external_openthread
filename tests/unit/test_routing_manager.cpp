@@ -619,7 +619,7 @@ void LogRouterAdvert(const Icmp6Packet &aPacket)
 
             VerifyOrQuit(rdnss.IsValid());
 
-            for (uint8_t index = 0; index < rdnss.GetNumAddresses(); index++)
+            for (uint16_t index = 0; index < rdnss.GetNumAddresses(); index++)
             {
                 Log("     RDNSS - %s, lifetime:%u", rdnss.GetAddressAt(index).ToString().AsCString(),
                     rdnss.GetLifetime());
@@ -816,16 +816,27 @@ void VerifyNat64PrefixInNetData(const Ip6::Prefix &aNat64Prefix)
 
 struct Pio
 {
-    Pio(const Ip6::Prefix &aPrefix, uint32_t aValidLifetime, uint32_t aPreferredLifetime)
+    using Flags = Ip6::Nd::PrefixInfoOption::Flags;
+
+    static constexpr Flags kOnLinkFlag     = Ip6::Nd::PrefixInfoOption::kOnLinkFlag;
+    static constexpr Flags kAutoConfigFlag = Ip6::Nd::PrefixInfoOption::kAutoConfigFlag;
+    static constexpr Flags kDhcp6Flag      = Ip6::Nd::PrefixInfoOption::kDhcp6PdPreferredFlag;
+
+    Pio(const Ip6::Prefix &aPrefix,
+        uint32_t           aValidLifetime,
+        uint32_t           aPreferredLifetime,
+        Flags              aFlags = kOnLinkFlag | kAutoConfigFlag)
         : mPrefix(aPrefix)
         , mValidLifetime(aValidLifetime)
         , mPreferredLifetime(aPreferredLifetime)
+        , mFlags(aFlags)
     {
     }
 
     const Ip6::Prefix &mPrefix;
     uint32_t           mValidLifetime;
     uint32_t           mPreferredLifetime;
+    Flags              mFlags;
 };
 
 struct Rio
@@ -921,7 +932,8 @@ void BuildRouterAdvert(Ip6::Nd::RouterAdvert::TxMessage &aRaMsg,
 
     for (; aNumPios > 0; aPios++, aNumPios--)
     {
-        SuccessOrQuit(aRaMsg.AppendPrefixInfoOption(aPios->mPrefix, aPios->mValidLifetime, aPios->mPreferredLifetime));
+        SuccessOrQuit(aRaMsg.AppendPrefixInfoOption(aPios->mPrefix, aPios->mValidLifetime, aPios->mPreferredLifetime,
+                                                    aPios->mFlags));
     }
 
     for (; aNumRios > 0; aRios++, aNumRios--)
@@ -1011,20 +1023,6 @@ void SendRouterAdvert(const Ip6::Address &aRouterAddress, const RaFlags &aRaFlag
                      DefaultRoute(0, NetworkData::kRoutePreferenceMedium), aRaFlags);
 }
 
-template <uint16_t kNumPios> void SendRouterAdvertToBorderRoutingProcessIcmp6Ra(const Pio (&aPios)[kNumPios])
-{
-    Ip6::Nd::RouterAdvert::TxMessage raMsg;
-    Icmp6Packet                      packet;
-
-    BuildRouterAdvert(raMsg, aPios, kNumPios, nullptr, 0, nullptr, 0,
-                      DefaultRoute(0, NetworkData::kRoutePreferenceMedium), RaFlags());
-    raMsg.GetAsPacket(packet);
-
-    otPlatBorderRoutingProcessIcmp6Ra(sInstance, packet.GetBytes(), packet.GetLength());
-    Log("Passing RA to otPlatBorderRoutingProcessIcmp6Ra");
-    LogRouterAdvert(packet);
-}
-
 struct OnLinkPrefix : public Pio
 {
     OnLinkPrefix(const Ip6::Prefix  &aPrefix,
@@ -1075,16 +1073,16 @@ void VerifyPrefixTable(const OnLinkPrefix *aOnLinkPrefixes,
                        const RoutePrefix  *aRoutePrefixes,
                        uint16_t            aNumRoutePrefixes)
 {
-    BorderRouter::RoutingManager::PrefixTableIterator iter;
-    BorderRouter::RoutingManager::PrefixTableEntry    entry;
-    uint16_t                                          onLinkPrefixCount = 0;
-    uint16_t                                          routePrefixCount  = 0;
+    BorderRouter::PrefixTableIterator iter;
+    BorderRouter::PrefixTableEntry    entry;
+    uint16_t                          onLinkPrefixCount = 0;
+    uint16_t                          routePrefixCount  = 0;
 
     Log("VerifyPrefixTable()");
 
-    sInstance->Get<BorderRouter::RoutingManager>().InitPrefixTableIterator(iter);
+    sInstance->Get<BorderRouter::RxRaTracker>().InitIterator(iter);
 
-    while (sInstance->Get<BorderRouter::RoutingManager>().GetNextPrefixTableEntry(iter, entry) == kErrorNone)
+    while (sInstance->Get<BorderRouter::RxRaTracker>().GetNextPrefixTableEntry(iter, entry) == kErrorNone)
     {
         bool didFind = false;
 
@@ -1164,15 +1162,15 @@ template <uint16_t kNumAddrs> void VerifyRdnssAddressTable(const RdnssAddress (&
 
 void VerifyRdnssAddressTable(const RdnssAddress *aRdnssAddresses, uint16_t aNumAddrs)
 {
-    BorderRouter::RoutingManager::PrefixTableIterator iter;
-    BorderRouter::RoutingManager::RdnssAddrEntry      entry;
-    uint16_t                                          count = 0;
+    BorderRouter::PrefixTableIterator iter;
+    BorderRouter::RdnssAddrEntry      entry;
+    uint16_t                          count = 0;
 
     Log("VerifyRdnssAddressTable()");
 
-    sInstance->Get<BorderRouter::RoutingManager>().InitPrefixTableIterator(iter);
+    sInstance->Get<BorderRouter::RxRaTracker>().InitIterator(iter);
 
-    while (sInstance->Get<BorderRouter::RoutingManager>().GetNextRdnssAddrEntry(iter, entry) == kErrorNone)
+    while (sInstance->Get<BorderRouter::RxRaTracker>().GetNextRdnssAddrEntry(iter, entry) == kErrorNone)
     {
         bool didFind = false;
 
@@ -1231,15 +1229,15 @@ template <uint16_t kNumRouters> void VerifyDiscoveredRouters(const InfraRouter (
 
 void VerifyDiscoveredRouters(const InfraRouter *aRouters, uint16_t aNumRouters)
 {
-    BorderRouter::RoutingManager::PrefixTableIterator iter;
-    BorderRouter::RoutingManager::RouterEntry         entry;
-    uint16_t                                          count = 0;
+    BorderRouter::PrefixTableIterator iter;
+    BorderRouter::RouterEntry         entry;
+    uint16_t                          count = 0;
 
     Log("VerifyDiscoveredRouters()");
 
-    sInstance->Get<BorderRouter::RoutingManager>().InitPrefixTableIterator(iter);
+    sInstance->Get<BorderRouter::RxRaTracker>().InitIterator(iter);
 
-    while (sInstance->Get<BorderRouter::RoutingManager>().GetNextRouterEntry(iter, entry) == kErrorNone)
+    while (sInstance->Get<BorderRouter::RxRaTracker>().GetNextRouterEntry(iter, entry) == kErrorNone)
     {
         bool didFind = false;
 
@@ -1474,6 +1472,8 @@ void TestSamePrefixesFromMultipleRouters(void)
     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
+    AdvanceTime(3000);
+
     VerifyOrQuit(heapAllocations == sHeapAllocatedPtrs.GetLength());
 
     Log("End of TestSamePrefixesFromMultipleRouters");
@@ -1624,6 +1624,8 @@ void TestOmrSelection(void)
     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
+    AdvanceTime(3000);
+
     VerifyOrQuit(heapAllocations == sHeapAllocatedPtrs.GetLength());
 
     Log("End of TestOmrSelection");
@@ -1892,6 +1894,8 @@ void TestOmrConfig(void)
     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
+    AdvanceTime(3000);
+
     VerifyOrQuit(heapAllocations == sHeapAllocatedPtrs.GetLength());
 
     Log("End of TestOmrConfig");
@@ -2057,9 +2061,131 @@ void TestDefaultRoute(void)
     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
+    AdvanceTime(3000);
+
+    // Remove the manually added on-mesh prefix with a default route.
+    // This ensures the device is no longer considered a BR, so its heap
+    // allocation in `NetDataBrTracker` is released. Otherwise, the
+    // `heapAllocations` check would fail.
+
+    SuccessOrQuit(otBorderRouterRemoveOnMeshPrefix(sInstance, &prefixConfig.mPrefix));
+    SuccessOrQuit(otBorderRouterRegister(sInstance));
+    AdvanceTime(3000);
+
     VerifyOrQuit(heapAllocations == sHeapAllocatedPtrs.GetLength());
 
     Log("End of TestDefaultRoute");
+
+    FinalizeTest();
+}
+
+void TestNonUlaPioWithOnlyOnLinkFlag(void)
+{
+    static constexpr uint32_t kMaxRaTxInterval = 196; // In seconds
+
+    Ip6::Prefix  localOnLink;
+    Ip6::Prefix  localOmr;
+    Ip6::Prefix  onLinkPrefix   = PrefixFromString("2000:abba:baba::", 64);
+    Ip6::Address routerAddressA = AddressFromString("fd00::aaaa");
+    uint16_t     heapAllocations;
+
+    Log("--------------------------------------------------------------------------------------------");
+    Log("TestNonUlaPioWithOnlyOnLinkFlag");
+
+    InitTest();
+
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Start Routing Manager. Check emitted RS and RA messages.
+
+    sRsEmitted   = false;
+    sRaValidated = false;
+    sExpectedPio = kPioAdvertisingLocalOnLink;
+    sExpectedRios.Clear();
+
+    heapAllocations = sHeapAllocatedPtrs.GetLength();
+    SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(true));
+
+    SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().GetOnLinkPrefix(localOnLink));
+    SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().GetOmrPrefix(localOmr));
+
+    Log("Local on-link prefix is %s", localOnLink.ToString().AsCString());
+    Log("Local OMR prefix is %s", localOmr.ToString().AsCString());
+
+    sExpectedRios.Add(localOmr);
+
+    AdvanceTime(30000);
+
+    VerifyOrQuit(sRsEmitted);
+    VerifyOrQuit(sRaValidated);
+    VerifyOrQuit(sExpectedRios.SawAll());
+    Log("Received RA was validated");
+
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Check the Network Data to include the local OMR and on-link prefix.
+
+    VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ false);
+    VerifyExternalRouteInNetData(kUlaRoute, kWithAdvPioFlagSet);
+
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Send an RA from router A with a new on-link (PIO) with
+    // only on-link (L) flag (no A or P).
+
+    SendRouterAdvert(routerAddressA, {Pio(onLinkPrefix, kValidLitime, kPreferredLifetime, Pio::kOnLinkFlag)});
+
+    sRaValidated = false;
+
+    AdvanceTime(10000);
+
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Check the discovered prefix table and ensure info from router A
+    // is present in the table.
+
+    VerifyPrefixTable({OnLinkPrefix(onLinkPrefix, kValidLitime, kPreferredLifetime, routerAddressA)});
+
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Check the Network Data. Now that we have observed a non-ULA
+    // on-link prefix (even with only on-link `L` flag), a default
+    // route should be published.
+
+    VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ true);
+    VerifyExternalRouteInNetData(kDefaultRoute, kWithAdvPioFlagSet);
+
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Check that BR is still advertising its local on-link prefix.
+
+    AdvanceTime(kMaxRaTxInterval * 1000);
+
+    VerifyOrQuit(sRaValidated);
+    VerifyOrQuit(sExpectedRios.SawAll());
+
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Disallow responding to NS messages. This should cause
+    // the router A to be deemed unreachable and its prefix
+    // entries aged out and then removed.
+
+    sRespondToNs = false;
+
+    AdvanceTime(kValidLitime * 1000 + 1000);
+
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Check that the discovered prefix table is now empty.
+
+    VerifyPrefixTableIsEmpty();
+
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Validate that the BR is no longer publishing a default route.
+
+    VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ false);
+    VerifyExternalRouteInNetData(kUlaRoute, kWithAdvPioFlagSet);
+
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
+    AdvanceTime(3000);
+
+    VerifyOrQuit(heapAllocations == sHeapAllocatedPtrs.GetLength());
+
+    Log("End of TestNonUlaPioWithOnlyOnLinkFlag");
 
     FinalizeTest();
 }
@@ -2223,6 +2349,17 @@ void TestAdvNonUlaRoute(void)
     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
+    AdvanceTime(3000);
+
+    // Remove the manually added on-mesh prefix with a default route.
+    // This ensures the device is no longer considered a BR, so its
+    // heap allocation in `NetDataBrTracker` is released. Otherwise,
+    // the `heapAllocations` check would fail.
+
+    SuccessOrQuit(otBorderRouterRemoveOnMeshPrefix(sInstance, &prefixConfig.mPrefix));
+    SuccessOrQuit(otBorderRouterRegister(sInstance));
+    AdvanceTime(3000);
+
     VerifyOrQuit(heapAllocations == sHeapAllocatedPtrs.GetLength());
 
     Log("End of TestAdvNonUlaRoute");
@@ -2342,6 +2479,8 @@ void TestFavoredOnLinkPrefix(void)
     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
+    AdvanceTime(3000);
+
     VerifyOrQuit(heapAllocations == sHeapAllocatedPtrs.GetLength());
 
     Log("End of TestFavoredOnLinkPrefix");
@@ -2480,6 +2619,8 @@ void TestLocalOnLinkPrefixDeprecation(void)
     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
+    AdvanceTime(3000);
+
     VerifyOrQuit(heapAllocations == sHeapAllocatedPtrs.GetLength());
 
     Log("End of TestLocalOnLinkPrefixDeprecation");
@@ -2636,6 +2777,8 @@ void TestDomainPrefixAsOmr(void)
     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
+    AdvanceTime(3000);
+
     VerifyOrQuit(heapAllocations == sHeapAllocatedPtrs.GetLength());
 
     Log("End of TestDomainPrefixAsOmr");
@@ -3145,6 +3288,8 @@ void TestExtPanIdChange(void)
     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
+    AdvanceTime(3000);
+
     VerifyOrQuit(heapAllocations == sHeapAllocatedPtrs.GetLength());
 
     Log("End of TestExtPanIdChange");
@@ -3283,6 +3428,8 @@ void TestPrefixStaleTime(void)
     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
+    AdvanceTime(3000);
+
     VerifyOrQuit(heapAllocations == sHeapAllocatedPtrs.GetLength());
 
     Log("End of TestPrefixStaleTime");
@@ -3436,6 +3583,8 @@ void TestRouterNsProbe(void)
     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
+    AdvanceTime(3000);
+
     VerifyOrQuit(heapAllocations == sHeapAllocatedPtrs.GetLength());
 
     Log("End of TestRouterNsProbe");
@@ -3607,6 +3756,7 @@ void TestLearningAndCopyingOfFlags(void)
 
     SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
     VerifyDiscoveredRoutersIsEmpty();
+    AdvanceTime(3000);
 
     VerifyOrQuit(heapAllocations == sHeapAllocatedPtrs.GetLength());
 
@@ -3695,6 +3845,7 @@ void TestLearnRaHeader(void)
 
     SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
     VerifyDiscoveredRoutersIsEmpty();
+    AdvanceTime(3000);
 
     VerifyOrQuit(heapAllocations == sHeapAllocatedPtrs.GetLength());
 
@@ -3915,6 +4066,8 @@ void TestConflictingPrefix(void)
     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
+    AdvanceTime(3000);
+
     VerifyOrQuit(heapAllocations == sHeapAllocatedPtrs.GetLength());
 
     Log("End of TestConflictingPrefix");
@@ -4429,6 +4582,8 @@ void TestNat64PrefixSelection(void)
     VerifyNat64PrefixInNetData(localNat64);
 
     SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
+    AdvanceTime(3000);
+
     VerifyOrQuit(sHeapAllocatedPtrs.GetLength() == heapAllocations);
 
     Log("End of TestNat64PrefixSelection");
@@ -4437,305 +4592,333 @@ void TestNat64PrefixSelection(void)
 #endif // OPENTHREAD_CONFIG_NAT64_BORDER_ROUTING_ENABLE
 
 #if OPENTHREAD_CONFIG_BORDER_ROUTING_DHCP6_PD_ENABLE
+
 void VerifyPdOmrPrefix(const Ip6::Prefix &aPrefix)
 {
-    otBorderRoutingPrefixTableEntry platformPrefixInfo;
+    BorderRouter::Dhcp6PdPrefix pdPrefix;
 
-    VerifyOrQuit(otBorderRoutingGetPdOmrPrefix(sInstance, &platformPrefixInfo) == OT_ERROR_NONE);
-    VerifyOrQuit(AsCoreType(&platformPrefixInfo.mPrefix) == aPrefix);
+    SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().GetDhcp6PdOmrPrefix(pdPrefix));
+    VerifyOrQuit(AsCoreType(&pdPrefix.mPrefix) == aPrefix);
 }
 
-void VerifyNoPdOmrPrefix()
+void VerifyNoPdOmrPrefix(void)
 {
-    otBorderRoutingPrefixTableEntry platformPrefixInfo;
+    BorderRouter::Dhcp6PdPrefix pdPrefix;
 
-    VerifyOrQuit(otBorderRoutingGetPdOmrPrefix(sInstance, &platformPrefixInfo) == OT_ERROR_NOT_FOUND);
+    VerifyOrQuit(sInstance->Get<BorderRouter::RoutingManager>().GetDhcp6PdOmrPrefix(pdPrefix) == kErrorNotFound);
 }
 
-void TestBorderRoutingProcessPlatfromGeneratedNd(void)
+template <uint16_t kNumPios> void ReportPdPrefixesAsRa(const Pio (&aPios)[kNumPios])
 {
+    Ip6::Nd::RouterAdvert::TxMessage raMsg;
+    Icmp6Packet                      packet;
+
+    BuildRouterAdvert(raMsg, aPios, kNumPios, nullptr, 0, nullptr, 0,
+                      DefaultRoute(0, NetworkData::kRoutePreferenceMedium), RaFlags());
+    raMsg.GetAsPacket(packet);
+
+    Log("Reporting DHCPv6-PD prefixes as RA");
+    LogRouterAdvert(packet);
+
+    sInstance->Get<BorderRouter::RoutingManager>().ProcessDhcp6PdPrefixesFromRa(packet);
+}
+
+void TestDhcp6Pd(void)
+{
+    static const uint8_t kInvalidDhcp6Ra1[] = {
+        0x86, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    };
+
+    static const uint8_t kInvalidDhcp6Ra2[] = {
+        0x87, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    };
+
+    static const uint8_t kInvalidDhcp6Ra3[] = {
+        0x86, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x03, 0x04, 0x41, 0xc0, 0x00, 0x00, 0x10, 0xe1, 0x00, 0x00, 0x04, 0xd2, 0x00, 0x00, 0x00, 0x00,
+        0x20, 0x01, 0x0d, 0xb8, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    };
+
+    struct InvalidDhcp6Ra
+    {
+        const uint8_t *mBytes;
+        uint16_t       mLength;
+    };
+
+    static const InvalidDhcp6Ra kInvalidDhcp6Ras[] = {
+        {kInvalidDhcp6Ra1, sizeof(kInvalidDhcp6Ra1)},
+        {kInvalidDhcp6Ra2, sizeof(kInvalidDhcp6Ra2)},
+        {kInvalidDhcp6Ra3, sizeof(kInvalidDhcp6Ra3)},
+    };
+
     Ip6::Prefix localOmr;
+    Ip6::Prefix prefix;
+    Ip6::Prefix ulaPrefix;
+    Ip6::Prefix newPrefix;
+    Ip6::Prefix shortPrefix;
     uint16_t    heapAllocations;
 
     Log("--------------------------------------------------------------------------------------------");
-    Log("TestBorderRoutingProcessPlatfromGeneratedNd");
+    Log("TestDhcp6Pd");
 
     InitTest(/* aEnableBorderRouting */ true);
     heapAllocations = sHeapAllocatedPtrs.GetLength();
 
-    otBorderRoutingDhcp6PdSetEnabled(sInstance, true);
+    sInstance->Get<BorderRouter::RoutingManager>().SetDhcp6PdEnabled(true);
+    VerifyOrQuit(sInstance->Get<BorderRouter::RoutingManager>().GetDhcp6PdState() !=
+                 BorderRouter::RoutingManager::kDhcp6PdStateDisabled);
 
+    SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().GetOmrPrefix(localOmr));
+
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    Log("Invalid DHCPv6-PD RA messages");
+
+    for (const InvalidDhcp6Ra &invalidRa : kInvalidDhcp6Ras)
     {
-        SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().GetOmrPrefix(localOmr));
-    }
+        Icmp6Packet raPacket;
 
-    // 0. Reject invalid RA.
-    Log("0. Invalid RA message.");
-    {
-        {
-            const uint8_t testInvalidRaMessage[] = {
-                0x86, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            };
-
-            otPlatBorderRoutingProcessIcmp6Ra(sInstance, testInvalidRaMessage, sizeof(testInvalidRaMessage));
-            VerifyNoPdOmrPrefix();
-        }
-
-        {
-            const uint8_t testInvalidRaMessage[] = {
-                0x87, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            };
-
-            otPlatBorderRoutingProcessIcmp6Ra(sInstance, testInvalidRaMessage, sizeof(testInvalidRaMessage));
-            VerifyNoPdOmrPrefix();
-        }
-
-        {
-            const uint8_t testRaMessageWithInvalidPrefix[] = {
-                0x86, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                0x03, 0x04, 0x41, 0xc0, 0x00, 0x00, 0x10, 0xe1, 0x00, 0x00, 0x04, 0xd2, 0x00, 0x00, 0x00, 0x00,
-                0x20, 0x01, 0x0d, 0xb8, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            };
-
-            otPlatBorderRoutingProcessIcmp6Ra(sInstance, testRaMessageWithInvalidPrefix,
-                                              sizeof(testRaMessageWithInvalidPrefix));
-            VerifyNoPdOmrPrefix();
-        }
-    }
-
-    // 1. Publish a prefix, and wait until it expired.
-    Log("1. Simple RA message.");
-    {
-        Ip6::Prefix raPrefix = PrefixFromString("2001:db8:dead:beef::", 64);
-
-        SendRouterAdvertToBorderRoutingProcessIcmp6Ra({Pio(raPrefix, kValidLitime, kPreferredLifetime)});
-
-        sExpectedRios.Add(raPrefix);
-        AdvanceTime(10000);
-
-        VerifyPdOmrPrefix(raPrefix);
-        VerifyOrQuit(sExpectedRios.SawAll());
-        VerifyOmrPrefixInNetData(raPrefix, /* aDefaultRoute */ false);
-
-        AdvanceTime(1500000);
-        sExpectedRios.Clear();
-        VerifyPdOmrPrefix(raPrefix);
-        VerifyOmrPrefixInNetData(raPrefix, /* aDefaultRoute */ false);
-
-        AdvanceTime(400000);
-        // Deprecated prefixes will be removed.
+        raPacket.Init(invalidRa.mBytes, invalidRa.mLength);
+        sInstance->Get<BorderRouter::RoutingManager>().ProcessDhcp6PdPrefixesFromRa(raPacket);
         VerifyNoPdOmrPrefix();
-        VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ false);
     }
 
-    // 1.1. Publish a prefix, and wait until it expired.
-    //      Multiple prefixes are advertised, only the smallest one will be used.
-    Log("1.1. RA message with multiple prefixes.");
-    {
-        Ip6::Prefix raPrefix    = PrefixFromString("2001:db8:dead:beef::", 64);
-        Ip6::Prefix ulaRaPrefix = PrefixFromString("fd01:db8:deaf:beef::", 64);
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-        SendRouterAdvertToBorderRoutingProcessIcmp6Ra({Pio(ulaRaPrefix, kValidLitime * 2, kPreferredLifetime * 2),
-                                                       Pio(raPrefix, kValidLitime, kPreferredLifetime)});
+    Log("Single DHCPv6-PD prefix");
 
-        sExpectedRios.Add(raPrefix);
-        AdvanceTime(10000);
+    prefix = PrefixFromString("2001:db8:dead:beef::", 64);
 
-        VerifyPdOmrPrefix(raPrefix);
-        VerifyOrQuit(sExpectedRios.SawAll());
-        VerifyOmrPrefixInNetData(raPrefix, /* aDefaultRoute */ false);
+    ReportPdPrefixesAsRa({Pio(prefix, kValidLitime, kPreferredLifetime)});
 
-        AdvanceTime(1500000);
-        sExpectedRios.Clear();
-        VerifyPdOmrPrefix(raPrefix);
-        VerifyOmrPrefixInNetData(raPrefix, /* aDefaultRoute */ false);
+    sExpectedRios.Add(prefix);
+    AdvanceTime(10000);
 
-        AdvanceTime(400000);
-        // Deprecated prefixes will be removed.
-        VerifyNoPdOmrPrefix();
-        VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ false);
-    }
+    VerifyPdOmrPrefix(prefix);
+    VerifyOrQuit(sExpectedRios.SawAll());
+    VerifyOmrPrefixInNetData(prefix, /* aDefaultRoute */ false);
 
-    // 2. Publish a prefix, and renew it before it expired.
-    Log("2. Renew prefix lifetime.");
-    {
-        Ip6::Prefix raPrefix = PrefixFromString("2001:db8:1:2::", 64);
+    AdvanceTime(1500000);
+    sExpectedRios.Clear();
+    VerifyPdOmrPrefix(prefix);
+    VerifyOmrPrefixInNetData(prefix, /* aDefaultRoute */ false);
 
-        SendRouterAdvertToBorderRoutingProcessIcmp6Ra({Pio(raPrefix, kValidLitime, kPreferredLifetime)});
+    AdvanceTime(400000);
+    // Deprecated prefixes will be removed.
+    VerifyNoPdOmrPrefix();
+    VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ false);
 
-        sExpectedRios.Add(raPrefix);
-        AdvanceTime(10000);
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Multiple prefixes are reported, ensure favored one is used.
 
-        VerifyPdOmrPrefix(raPrefix);
-        VerifyOrQuit(sExpectedRios.SawAll());
-        VerifyOmrPrefixInNetData(raPrefix, /* aDefaultRoute */ false);
+    Log("Multiple DHCPv6-PD prefixes");
 
-        AdvanceTime(1500000);
-        sExpectedRios.Clear();
-        VerifyPdOmrPrefix(raPrefix);
-        VerifyOmrPrefixInNetData(raPrefix, /* aDefaultRoute */ false);
+    prefix    = PrefixFromString("2001:db8:dead:beef::", 64);
+    ulaPrefix = PrefixFromString("fd01:db8:deaf:beef::", 64);
 
-        SendRouterAdvertToBorderRoutingProcessIcmp6Ra({Pio(raPrefix, kValidLitime, kPreferredLifetime)});
+    ReportPdPrefixesAsRa(
+        {Pio(ulaPrefix, kValidLitime * 2, kPreferredLifetime * 2), Pio(prefix, kValidLitime, kPreferredLifetime)});
 
-        AdvanceTime(400000);
-        VerifyPdOmrPrefix(raPrefix);
-        VerifyOmrPrefixInNetData(raPrefix, /* aDefaultRoute */ false);
+    sExpectedRios.Add(prefix);
+    AdvanceTime(10000);
 
-        AdvanceTime(1500000);
-        VerifyNoPdOmrPrefix();
-        VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ false);
-    }
+    VerifyPdOmrPrefix(prefix);
+    VerifyOrQuit(sExpectedRios.SawAll());
+    VerifyOmrPrefixInNetData(prefix, /* aDefaultRoute */ false);
 
-    // 3. Publish a prefix, and publish another prefix to replace it (with goodbye ra).
-    Log("3. Update prefix.");
-    {
-        Ip6::Prefix raPrefix    = PrefixFromString("2001:db8:1:2::", 64);
-        Ip6::Prefix newRaPrefix = PrefixFromString("2001:db8:3:4::", 64);
+    AdvanceTime(1500000);
+    sExpectedRios.Clear();
+    VerifyPdOmrPrefix(prefix);
+    VerifyOmrPrefixInNetData(prefix, /* aDefaultRoute */ false);
 
-        SendRouterAdvertToBorderRoutingProcessIcmp6Ra({Pio(raPrefix, kValidLitime, kPreferredLifetime)});
+    AdvanceTime(400000);
+    // Deprecated prefixes will be removed.
+    VerifyNoPdOmrPrefix();
+    VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ false);
 
-        sExpectedRios.Add(raPrefix);
-        sExpectedRios.Clear();
-        AdvanceTime(10000);
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-        VerifyPdOmrPrefix(raPrefix);
-        VerifyOmrPrefixInNetData(raPrefix, /* aDefaultRoute */ false);
+    Log("Renew DHCPv6-PD prefix lifetime");
 
-        AdvanceTime(1000000);
-        VerifyPdOmrPrefix(raPrefix);
+    prefix = PrefixFromString("2001:db8:1:2::", 64);
 
-        sExpectedRios.Add(newRaPrefix);
+    ReportPdPrefixesAsRa({Pio(prefix, kValidLitime, kPreferredLifetime)});
 
-        // When the prefix is replaced, there will be a short period when the old prefix is still in the netdata, and PD
-        // manager will refuse to request the prefix.
-        SendRouterAdvertToBorderRoutingProcessIcmp6Ra(
-            {Pio(raPrefix, 0, 0), Pio(newRaPrefix, kValidLitime, kPreferredLifetime)});
-        // Advance a short period of time to wait for a stable PD state.
-        AdvanceTime(5000);
-        VerifyOrQuit(sInstance->Get<BorderRouter::RoutingManager>().GetDhcp6PdState() ==
-                     BorderRouter::RoutingManager::kDhcp6PdStateRunning);
-        SendRouterAdvertToBorderRoutingProcessIcmp6Ra({Pio(newRaPrefix, kValidLitime, kPreferredLifetime)});
+    sExpectedRios.Add(prefix);
+    AdvanceTime(10000);
 
-        AdvanceTime(1000000);
-        VerifyOrQuit(sExpectedRios.SawAll());
-        VerifyPdOmrPrefix(newRaPrefix);
+    VerifyPdOmrPrefix(prefix);
+    VerifyOrQuit(sExpectedRios.SawAll());
+    VerifyOmrPrefixInNetData(prefix, /* aDefaultRoute */ false);
 
-        AdvanceTime(1000000);
-        VerifyNoPdOmrPrefix();
-        VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ false);
-    }
+    AdvanceTime(1500000);
+    sExpectedRios.Clear();
+    VerifyPdOmrPrefix(prefix);
+    VerifyOmrPrefixInNetData(prefix, /* aDefaultRoute */ false);
 
-    // 4. Short prefix will be extended to /64.
-    Log("4. Short prefix");
-    {
-        // The prefix will be padded to a /64 prefix.
-        Ip6::Prefix raPrefix = PrefixFromString("2001:db8:cafe:0::", 64);
-        Ip6::Prefix realRaPrefix;
+    ReportPdPrefixesAsRa({Pio(prefix, kValidLitime, kPreferredLifetime)});
 
-        realRaPrefix.Set(raPrefix.GetBytes(), 48);
-        SendRouterAdvertToBorderRoutingProcessIcmp6Ra({Pio(realRaPrefix, kValidLitime, kPreferredLifetime)});
+    AdvanceTime(400000);
+    VerifyPdOmrPrefix(prefix);
+    VerifyOmrPrefixInNetData(prefix, /* aDefaultRoute */ false);
 
-        sExpectedRios.Add(raPrefix);
-        AdvanceTime(10000);
+    AdvanceTime(1500000);
+    VerifyNoPdOmrPrefix();
+    VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ false);
 
-        VerifyPdOmrPrefix(raPrefix);
-        VerifyOrQuit(sExpectedRios.SawAll());
-        VerifyOmrPrefixInNetData(raPrefix, /* aDefaultRoute */ false);
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Report a prefix, and remove it and report a new DHCPv6-PD prefix
 
-        AdvanceTime(1500000);
-        sExpectedRios.Clear();
-        VerifyPdOmrPrefix(raPrefix);
-        VerifyOmrPrefixInNetData(raPrefix, /* aDefaultRoute */ false);
+    Log("Update DHCPv6-PD prefix (add then remove and add new)");
 
-        AdvanceTime(400000);
-        // Deprecated prefixes will be removed.
-        VerifyNoPdOmrPrefix();
-        VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ false);
-    }
+    prefix    = PrefixFromString("2001:db8:1:2::", 64);
+    newPrefix = PrefixFromString("2001:db8:3:4::", 64);
 
-    // 5. Publish a prefix with long lifetime, and wait until it expired.
-    Log("5. RA message with long prefix lifetime");
-    {
-        Ip6::Prefix raPrefix = PrefixFromString("2001:db8:dead:beef::", 64);
+    ReportPdPrefixesAsRa({Pio(prefix, kValidLitime, kPreferredLifetime)});
 
-        SendRouterAdvertToBorderRoutingProcessIcmp6Ra({Pio(raPrefix, 5000, 5000)});
+    sExpectedRios.Add(prefix);
+    sExpectedRios.Clear();
+    AdvanceTime(10000);
 
-        sExpectedRios.Add(raPrefix);
-        AdvanceTime(10 * 1000);
+    VerifyPdOmrPrefix(prefix);
+    VerifyOmrPrefixInNetData(prefix, /* aDefaultRoute */ false);
 
-        VerifyPdOmrPrefix(raPrefix);
-        VerifyOrQuit(sExpectedRios.SawAll());
-        VerifyOmrPrefixInNetData(raPrefix, /* aDefaultRoute */ false);
+    AdvanceTime(1000000);
+    VerifyPdOmrPrefix(prefix);
 
-        AdvanceTime(4900 * 1000);
-        sExpectedRios.Clear();
-        VerifyPdOmrPrefix(raPrefix);
-        VerifyOmrPrefixInNetData(raPrefix, /* aDefaultRoute */ false);
+    sExpectedRios.Add(newPrefix);
 
-        AdvanceTime(200 * 1000);
-        // Deprecated prefixes will be removed.
-        VerifyNoPdOmrPrefix();
-        VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ false);
-    }
+    // When the prefix is replaced, there will be a short period when the old prefix is still in the netdata, and PD
+    // manager will refuse to request the prefix.
+    ReportPdPrefixesAsRa({Pio(prefix, 0, 0), Pio(newPrefix, kValidLitime, kPreferredLifetime)});
+    // Advance a short period of time to wait for a stable PD state.
+    AdvanceTime(5000);
+    VerifyOrQuit(sInstance->Get<BorderRouter::RoutingManager>().GetDhcp6PdState() ==
+                 BorderRouter::RoutingManager::kDhcp6PdStateRunning);
+    ReportPdPrefixesAsRa({Pio(newPrefix, kValidLitime, kPreferredLifetime)});
 
-    // 6. Replace a prefix, on some platforms, there might be no messages to deprecate the old prefix, instead, they
-    // send new prefixes directly.
-    //    In this case, we still use the old prefix as long as the old prefix preferred lifetime is not exceeded, and
-    //    replace it with the new prefix when expired.
-    Log("6. Replace prefix.");
-    {
-        Ip6::Prefix raPrefix    = PrefixFromString("2001:db8:1:2::", 64);
-        Ip6::Prefix newRaPrefix = PrefixFromString("2001:db8:3:4::", 64);
+    AdvanceTime(1000000);
+    VerifyOrQuit(sExpectedRios.SawAll());
+    VerifyPdOmrPrefix(newPrefix);
 
-        SendRouterAdvertToBorderRoutingProcessIcmp6Ra({Pio(raPrefix, kValidLitime, kPreferredLifetime)});
+    AdvanceTime(1000000);
+    VerifyNoPdOmrPrefix();
+    VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ false);
 
-        sExpectedRios.Add(raPrefix);
-        sExpectedRios.Clear();
-        AdvanceTime(10 * 1000);
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Report a shorter (/48) prefix, validate it is extended to /64.
 
-        VerifyPdOmrPrefix(raPrefix);
-        VerifyOmrPrefixInNetData(raPrefix, /* aDefaultRoute */ false);
+    Log("Short DHCPv6-PD prefix");
 
-        AdvanceTime(1000 * 1000);
-        VerifyPdOmrPrefix(raPrefix);
+    prefix = PrefixFromString("2001:db8:cafe:0::", 64);
 
-        // Send new prefix without deprecating old prefix.
-        // The old prefix should be preferred for another (1800 - 10 - 1000) = 790s
-        SendRouterAdvertToBorderRoutingProcessIcmp6Ra({Pio(newRaPrefix, kValidLitime, kPreferredLifetime)});
-        AdvanceTime(500 * 1000);
-        VerifyPdOmrPrefix(raPrefix);
+    shortPrefix.Set(prefix.GetBytes(), 48);
+    ReportPdPrefixesAsRa({Pio(shortPrefix, kValidLitime, kPreferredLifetime)});
 
-        AdvanceTime(300 * 1000);
-        // Old Prefix should be removed now.
-        VerifyNoPdOmrPrefix();
+    sExpectedRios.Add(prefix);
+    AdvanceTime(10000);
 
-        sExpectedRios.Add(newRaPrefix);
+    VerifyPdOmrPrefix(prefix);
+    VerifyOrQuit(sExpectedRios.SawAll());
+    VerifyOmrPrefixInNetData(prefix, /* aDefaultRoute */ false);
 
-        // When the prefix is replaced, there will be a short period when the old prefix is still in the netdata, and PD
-        // manager will refuse to request the prefix.
-        SendRouterAdvertToBorderRoutingProcessIcmp6Ra({Pio(newRaPrefix, kValidLitime, kPreferredLifetime)});
-        // Advance a short period of time to wait for a stable PD state.
-        AdvanceTime(5000);
-        VerifyOrQuit(sInstance->Get<BorderRouter::RoutingManager>().GetDhcp6PdState() ==
-                     BorderRouter::RoutingManager::kDhcp6PdStateRunning);
-        SendRouterAdvertToBorderRoutingProcessIcmp6Ra({Pio(newRaPrefix, kValidLitime, kPreferredLifetime)});
+    AdvanceTime(1500000);
+    sExpectedRios.Clear();
+    VerifyPdOmrPrefix(prefix);
+    VerifyOmrPrefixInNetData(prefix, /* aDefaultRoute */ false);
 
-        AdvanceTime(1000 * 1000);
-        VerifyOrQuit(sExpectedRios.SawAll());
-        VerifyPdOmrPrefix(newRaPrefix);
+    AdvanceTime(400000);
+    VerifyNoPdOmrPrefix();
+    VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ false);
 
-        AdvanceTime(1000 * 1000);
-        VerifyNoPdOmrPrefix();
-        VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ false);
-    }
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Report a prefix with long lifetime, and wait until it expired.
 
-    SuccessOrQuit(otBorderRoutingSetEnabled(sInstance, false));
+    Log("Single DHCPv6-PD prefix with long lifetime");
+    prefix = PrefixFromString("2001:db8:dead:beef::", 64);
+
+    ReportPdPrefixesAsRa({Pio(prefix, 5000, 5000)});
+
+    sExpectedRios.Add(prefix);
+    AdvanceTime(10 * 1000);
+
+    VerifyPdOmrPrefix(prefix);
+    VerifyOrQuit(sExpectedRios.SawAll());
+    VerifyOmrPrefixInNetData(prefix, /* aDefaultRoute */ false);
+
+    AdvanceTime(4900 * 1000);
+    sExpectedRios.Clear();
+    VerifyPdOmrPrefix(prefix);
+    VerifyOmrPrefixInNetData(prefix, /* aDefaultRoute */ false);
+
+    AdvanceTime(200 * 1000);
+    // Deprecated prefixes will be removed.
+    VerifyNoPdOmrPrefix();
+    VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ false);
+
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Replace a prefix: In some platforms there might be no messages to deprecate the old prefix, instead, they
+    // send new prefixes directly. In this case, we still use the old prefix as long as the old prefix preferred
+    // lifetime is not exceeded, and replace it with the new prefix when expired.
+
+    Log("Replacing DHCPv6-PD prefix");
+
+    prefix    = PrefixFromString("2001:db8:1:2::", 64);
+    newPrefix = PrefixFromString("2001:db8:3:4::", 64);
+
+    ReportPdPrefixesAsRa({Pio(prefix, kValidLitime, kPreferredLifetime)});
+
+    sExpectedRios.Add(prefix);
+    sExpectedRios.Clear();
+    AdvanceTime(10 * 1000);
+
+    VerifyPdOmrPrefix(prefix);
+    VerifyOmrPrefixInNetData(prefix, /* aDefaultRoute */ false);
+
+    AdvanceTime(1000 * 1000);
+    VerifyPdOmrPrefix(prefix);
+
+    // Send new prefix without deprecating old prefix.
+    // The old prefix should be preferred for another (1800 - 10 - 1000) = 790s
+    ReportPdPrefixesAsRa({Pio(newPrefix, kValidLitime, kPreferredLifetime)});
+    AdvanceTime(500 * 1000);
+    VerifyPdOmrPrefix(prefix);
+
+    AdvanceTime(300 * 1000);
+    // Old Prefix should be removed now.
+    VerifyNoPdOmrPrefix();
+
+    sExpectedRios.Add(newPrefix);
+
+    // When the prefix is replaced, there will be a short period when the old prefix is still in the netdata, and PD
+    // manager will refuse to request the prefix.
+    ReportPdPrefixesAsRa({Pio(newPrefix, kValidLitime, kPreferredLifetime)});
+    // Advance a short period of time to wait for a stable PD state.
+    AdvanceTime(5000);
+    VerifyOrQuit(sInstance->Get<BorderRouter::RoutingManager>().GetDhcp6PdState() ==
+                 BorderRouter::RoutingManager::kDhcp6PdStateRunning);
+    ReportPdPrefixesAsRa({Pio(newPrefix, kValidLitime, kPreferredLifetime)});
+
+    AdvanceTime(1000 * 1000);
+    VerifyOrQuit(sExpectedRios.SawAll());
+    VerifyPdOmrPrefix(newPrefix);
+
+    AdvanceTime(1000 * 1000);
+    VerifyNoPdOmrPrefix();
+    VerifyOmrPrefixInNetData(localOmr, /* aDefaultRoute */ false);
+
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
+    AdvanceTime(3000);
+
     VerifyOrQuit(sHeapAllocatedPtrs.GetLength() <= heapAllocations);
 
-    Log("End of TestBorderRoutingProcessPlatfromGeneratedNd");
+    Log("End of TestDhcp6Pd");
 
     FinalizeTest();
 }
+
 #endif // OPENTHREAD_CONFIG_BORDER_ROUTING_DHCP6_PD_ENABLE
 
 static void HandleRdnssChanged(void *aContext)
@@ -4794,7 +4977,7 @@ void TestRdnss(void)
     // Set the RDNSS callback on Routing Manager
 
     rdnssCallbackCalled = false;
-    sInstance->Get<BorderRouter::RoutingManager>().SetRdnssAddrCallback(HandleRdnssChanged, &rdnssCallbackCalled);
+    sInstance->Get<BorderRouter::RxRaTracker>().SetRdnssAddrCallback(HandleRdnssChanged, &rdnssCallbackCalled);
 
     VerifyOrQuit(!rdnssCallbackCalled);
 
@@ -4968,8 +5151,8 @@ void TestRdnss(void)
     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     SuccessOrQuit(sInstance->Get<BorderRouter::RoutingManager>().SetEnabled(false));
-
     VerifyRdnssAddressTableIsEmpty();
+    AdvanceTime(3000);
 
     VerifyOrQuit(heapAllocations == sHeapAllocatedPtrs.GetLength());
 
@@ -4989,6 +5172,7 @@ int main(void)
     ot::TestOmrSelection();
     ot::TestOmrConfig();
     ot::TestDefaultRoute();
+    ot::TestNonUlaPioWithOnlyOnLinkFlag();
     ot::TestAdvNonUlaRoute();
     ot::TestFavoredOnLinkPrefix();
     ot::TestLocalOnLinkPrefixDeprecation();
@@ -5011,7 +5195,7 @@ int main(void)
     ot::TestNat64PrefixSelection();
 #endif
 #if OPENTHREAD_CONFIG_BORDER_ROUTING_DHCP6_PD_ENABLE
-    ot::TestBorderRoutingProcessPlatfromGeneratedNd();
+    ot::TestDhcp6Pd();
 #endif
     ot::TestRdnss();
 

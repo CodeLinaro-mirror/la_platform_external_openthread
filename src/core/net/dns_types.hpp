@@ -41,6 +41,7 @@
 
 #include "common/appender.hpp"
 #include "common/as_core_type.hpp"
+#include "common/bit_utils.hpp"
 #include "common/clearable.hpp"
 #include "common/data.hpp"
 #include "common/encoding.hpp"
@@ -1304,7 +1305,7 @@ public:
      * @retval kErrorNone    Successfully appended the TXT entry.
      * @retval kErrorNoBufs  Insufficient available buffers to append the entry.
      */
-    Error AppendBytesEntry(const char *aKey, const void *aBuffer, uint16_t aLength);
+    Error AppendBytesEntry(const char *aKey, const void *aBuffer, uint8_t aLength);
 
     /**
      * Appends a TXT entry for a given key and a given object as the entry's value.
@@ -1352,10 +1353,8 @@ public:
      */
     template <typename UintType> Error AppendBigEndianUintEntry(const char *aKey, UintType aUintValue)
     {
-        static_assert(TypeTraits::IsSame<UintType, uint8_t>::kValue || TypeTraits::IsSame<UintType, uint16_t>::kValue ||
-                          TypeTraits::IsSame<UintType, uint32_t>::kValue ||
-                          TypeTraits::IsSame<UintType, uint64_t>::kValue,
-                      "UintType must be uint8/uint16/uint32/uint64");
+        static_assert(TypeTraits::IsUint<UintType>::kValue,
+                      "UintType must be an unsigned int (8, 16, 32, or 64 bit len)");
 
         return AppendEntry<UintType>(aKey, BigEndian::HostSwap<UintType>(aUintValue));
     }
@@ -2847,7 +2846,7 @@ public:
          *
          * @returns The Bitmap length
          */
-        uint8_t GetBitmapLength(void) { return mBitmapLength; }
+        uint8_t GetBitmapLength(void) const { return mBitmapLength; }
 
         /**
          * Gets the total size (number of bytes) of the `TypeBitMap` field.

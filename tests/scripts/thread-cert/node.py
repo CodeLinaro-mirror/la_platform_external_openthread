@@ -177,9 +177,15 @@ class OtbrDocker:
         self.bash('service otbr-agent stop')
 
     def stop_mdns_service(self):
+        self.send_command('mdns disable')
+        # OT build may not include mdns, so ignore `InvalidCommand` errors.
+        self._expect(r'Done|Error 35: InvalidCommand')
         self.bash('service avahi-daemon stop; service mdns stop; !(cat /proc/net/udp | grep -i :14E9)')
 
     def start_mdns_service(self):
+        self.send_command('mdns enable')
+        # OT build may not include mdns, so ignore `InvalidCommand` errors.
+        self._expect(r'Done|Error 35: InvalidCommand')
         self.bash('service avahi-daemon start; service mdns start; cat /proc/net/udp | grep -i :14E9')
 
     def start_ot_ctl(self):
@@ -922,11 +928,11 @@ class NodeImpl:
         assert len(payload) == payload_len
         return (direction, type, payload)
 
-    def send_command(self, cmd, go=True, expect_command_echo=True):
+    def send_command(self, cmd, go=True, expect_command_echo=True, maybeoff=False):
         print("%d: %s" % (self.nodeid, cmd))
         self.pexpect.send(cmd + '\n')
         if go:
-            self.simulator.go(0, nodeid=self.nodeid)
+            self.simulator.go(0, nodeid=self.nodeid, maybeoff=maybeoff)
         sys.stdout.flush()
 
         if expect_command_echo:
@@ -1376,7 +1382,7 @@ class NodeImpl:
     def srp_client_get_lease_interval(self) -> int:
         cmd = 'srp client leaseinterval'
         self.send_command(cmd)
-        return int(self._expect_result('\d+'))
+        return int(self._expect_result(r'\d+'))
 
     def srp_client_set_key_lease_interval(self, leaseinterval: int):
         cmd = f'srp client keyleaseinterval {leaseinterval}'
@@ -1386,7 +1392,7 @@ class NodeImpl:
     def srp_client_get_key_lease_interval(self) -> int:
         cmd = 'srp client keyleaseinterval'
         self.send_command(cmd)
-        return int(self._expect_result('\d+'))
+        return int(self._expect_result(r'\d+'))
 
     def srp_client_set_ttl(self, ttl: int):
         cmd = f'srp client ttl {ttl}'
@@ -1396,7 +1402,7 @@ class NodeImpl:
     def srp_client_get_ttl(self) -> int:
         cmd = 'srp client ttl'
         self.send_command(cmd)
-        return int(self._expect_result('\d+'))
+        return int(self._expect_result(r'\d+'))
 
     #
     # TREL utilities
@@ -1446,6 +1452,14 @@ class NodeImpl:
         cmd = 'trel port'
         self.send_command(cmd)
         return int(self._expect_command_output()[0])
+
+    def enable_border_agent(self):
+        self.send_command('ba enable')
+        self._expect_done()
+
+    def disable_border_agent(self):
+        self.send_command('ba disable')
+        self._expect_done()
 
     def get_border_agent_counters(self):
         cmd = 'ba counters'
@@ -1613,7 +1627,7 @@ class NodeImpl:
         self.send_command(cmd)
 
         table = {}
-        for line in self._expect_results("\S+ \d+"):
+        for line in self._expect_results(r"\S+ \d+"):
             line = line.split()
             assert len(line) == 2, line
             ip = IPv6Address(line[0])
@@ -1737,6 +1751,7 @@ class NodeImpl:
         cmd = 'networkkey %s' % networkkey
         self.send_command(cmd)
         self._expect_done()
+        self.simulator.add_network_key(network_key)
 
     def get_key_sequence_counter(self):
         self.send_command('keysequence counter')
@@ -2659,7 +2674,7 @@ class NodeImpl:
         self._reset('factoryreset')
 
     def _reset(self, cmd):
-        self.send_command(cmd, expect_command_echo=False)
+        self.send_command(cmd, expect_command_echo=False, maybeoff=True)
         time.sleep(self.RESET_DELAY)
         # Send a "version" command and drain the CLI output after reset
         self.send_command('version', expect_command_echo=False)
@@ -2728,6 +2743,7 @@ class NodeImpl:
             cmd = 'dataset networkkey %s' % network_key
             self.send_command(cmd, go=False)
             self._expect_done()
+            self.simulator.add_network_key(network_key)
 
         if network_name is not None:
             cmd = 'dataset networkname %s' % network_name
@@ -2863,6 +2879,7 @@ class NodeImpl:
 
         if network_key is not None:
             cmd += 'networkkey %s ' % network_key
+            self.simulator.add_network_key(network_key)
 
         if mesh_local is not None:
             cmd += 'localprefix %s ' % mesh_local
@@ -2940,6 +2957,7 @@ class NodeImpl:
 
         if network_key is not None:
             cmd += 'networkkey %s ' % network_key
+            self.simulator.add_network_key(network_key)
 
         if mesh_local is not None:
             cmd += 'localprefix %s ' % mesh_local

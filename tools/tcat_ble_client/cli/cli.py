@@ -27,13 +27,14 @@
 """
 import readline
 import shlex
-from argparse import ArgumentParser
+from argparse import Namespace
 from ble.ble_stream_secure import BleStreamSecure
 from cli.base_commands import (DisconnectCommand, HelpCommand, HelloCommand, CommissionCommand, DecommissionCommand,
                                ExtractDatasetCommand, GetCommissionerCertificate, GetDeviceIdCommand, GetPskdHash,
                                GetExtPanIDCommand, GetNetworkNameCommand, GetProvisioningUrlCommand, PingCommand,
                                GetRandomNumberChallenge, ThreadStateCommand, ScanCommand, PresentHash,
-                               DiagnosticTlvsCommand)
+                               DiagnosticTlvsCommand, GetApplicationLayersCommand, SendVendorData,
+                               SendApplicationData1, SendApplicationData2, SendApplicationData3, SendApplicationData4)
 from .tlv_commands import TlvCommand
 from cli.dataset_commands import (DatasetCommand)
 from dataset.dataset import ThreadDataset
@@ -44,11 +45,17 @@ class CLI:
 
     def __init__(self,
                  dataset: ThreadDataset,
-                 cmd_args: Optional[ArgumentParser] = None,
+                 cmd_args: Optional[Namespace] = None,
                  ble_sstream: Optional[BleStreamSecure] = None):
         self._commands = {
             'help': HelpCommand(),
             'hello': HelloCommand(),
+            'get_apps': GetApplicationLayersCommand(),
+            'appdata1': SendApplicationData1(),
+            'appdata2': SendApplicationData2(),
+            'appdata3': SendApplicationData3(),
+            'appdata4': SendApplicationData4(),
+            'vendor_data': SendVendorData(),
             'commission': CommissionCommand(),
             'decommission': DecommissionCommand(),
             'disconnect': DisconnectCommand(),

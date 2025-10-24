@@ -72,7 +72,7 @@ void Link::AfterInit(void) { mInterface.Init(); }
 
 void Link::Enable(void)
 {
-    mInterface.Enable();
+    mInterface.SetEnabled(true, Interface::kRequesterStack);
 
     if (mState == kStateDisabled)
     {
@@ -82,7 +82,7 @@ void Link::Enable(void)
 
 void Link::Disable(void)
 {
-    mInterface.Disable();
+    mInterface.SetEnabled(false, Interface::kRequesterStack);
 
     if (mState != kStateDisabled)
     {
@@ -347,6 +347,11 @@ void Link::ProcessReceivedPacket(Packet &aPacket, const Ip6::SockAddr &aSockAddr
     mRxPacketSenderAddr = aSockAddr;
     mRxPacketPeer       = Get<PeerTable>().FindMatching(aPacket.GetHeader().GetSource());
 
+    if (mRxPacketPeer != nullptr)
+    {
+        mRxPacketPeer->UpdateLastInteractionTime();
+    }
+
     if (type != Header::kTypeBroadcast)
     {
         VerifyOrExit(aPacket.GetHeader().GetDestination() == Get<Mac::Mac>().GetExtAddress());
@@ -407,7 +412,7 @@ void Link::CheckPeerAddrOnRxSuccess(PeerSockAddrUpdateMode aMode)
     if (aMode == kAllowPeerSockAddrUpdate)
     {
         LogNote("Updating the peer sock-addr to the newly received");
-        mRxPacketPeer->SetSockAddr(mRxPacketSenderAddr);
+        mRxPacketPeer->UpdateSockAddrBasedOnRx(mRxPacketSenderAddr);
     }
 
     mPeerDiscoverer.NotifyPeerSocketAddressDifference(prevSockAddr, mRxPacketSenderAddr);

@@ -58,8 +58,12 @@
 #include <openthread/border_routing.h>
 #include <openthread/nat64.h>
 #include <openthread/netdata.h>
+#include <openthread/platform/border_routing.h>
 
+#include "border_router/br_tracker.hpp"
+#include "border_router/br_types.hpp"
 #include "border_router/infra_if.hpp"
+#include "border_router/rx_ra_tracker.hpp"
 #include "common/array.hpp"
 #include "common/callback.hpp"
 #include "common/equatable.hpp"
@@ -74,6 +78,7 @@
 #include "common/owning_list.hpp"
 #include "common/pool.hpp"
 #include "common/string.hpp"
+#include "common/tasklet.hpp"
 #include "common/timer.hpp"
 #include "crypto/sha256.hpp"
 #include "net/ip6.hpp"
@@ -83,10 +88,6 @@
 
 namespace ot {
 namespace BorderRouter {
-
-extern "C" void otPlatBorderRoutingProcessIcmp6Ra(otInstance *aInstance, const uint8_t *aMessage, uint16_t aLength);
-extern "C" void otPlatBorderRoutingProcessDhcp6PdPrefix(otInstance                            *aInstance,
-                                                        const otBorderRoutingPrefixTableEntry *aPrefixInfo);
 
 /**
  * Implements bi-directional routing between Thread and Infrastructure networks.
@@ -98,25 +99,10 @@ class RoutingManager : public InstanceLocator
 {
     friend class ot::Notifier;
     friend class ot::Instance;
-
-#if OPENTHREAD_CONFIG_BORDER_ROUTING_DHCP6_PD_ENABLE
-    friend void otPlatBorderRoutingProcessIcmp6Ra(otInstance *aInstance, const uint8_t *aMessage, uint16_t aLength);
-    friend void otPlatBorderRoutingProcessDhcp6PdPrefix(otInstance                            *aInstance,
-                                                        const otBorderRoutingPrefixTableEntry *aPrefixInfo);
-#endif
+    friend class NetDataBrTracker;
+    friend class RxRaTracker;
 
 public:
-    typedef NetworkData::RoutePreference          RoutePreference;     ///< Route preference (high, medium, low).
-    typedef otBorderRoutingPrefixTableIterator    PrefixTableIterator; ///< Prefix Table Iterator.
-    typedef otBorderRoutingPrefixTableEntry       PrefixTableEntry;    ///< Prefix Table Entry.
-    typedef otBorderRoutingRouterEntry            RouterEntry;         ///< Router Entry.
-    typedef otBorderRoutingRdnssAddrEntry         RdnssAddrEntry;      ///< RDNSS Address Entry.
-    typedef otBorderRoutingRdnssAddrCallback      RdnssAddrCallback;   ///< RDNS Address changed callback.
-    typedef otBorderRoutingPeerBorderRouterEntry  PeerBrEntry;         ///< Peer Border Router Entry.
-    typedef otPdProcessedRaInfo                   PdProcessedRaInfo;   ///< Data of PdProcessedRaInfo.
-    typedef otBorderRoutingRequestDhcp6PdCallback PdCallback;          ///< DHCPv6 PD callback.
-    typedef otBorderRoutingMultiAilCallback       MultiAilCallback;    ///< Multi AIL detection callback.
-
     /**
      * This constant specifies the maximum number of route prefixes that may be published by `RoutingManager`
      * in Thread Network Data.
@@ -180,6 +166,17 @@ public:
      * @retval  kErrorInvalidArgs  The index of the infra interface is not valid.
      */
     Error Init(uint32_t aInfraIfIndex, bool aInfraIfIsRunning);
+
+    /**
+     * Gets the interface index of the currently configured infrastructure interface.
+     *
+     * @param[out] aInfraIfIndex      A reference to output the interface index.
+     * @param[out] aInfraIfIsRunning  A reference to output whether the interface is running.
+     *
+     * @retval kErrorNone           Successfully retrieved the interface information.
+     * @retval kErrorInvalidState   The Border Routing Manager is not initialized.
+     */
+    Error GetInfraIfInfo(uint32_t &aInfraIfIndex, bool &aInfraIfIsRunning) const;
 
     /**
      * Enables/disables the Border Routing Manager.
@@ -459,125 +456,6 @@ public:
      */
     void HandleInfraIfStateChanged(void) { EvaluateState(); }
 
-    /**
-     * Checks whether the on-mesh prefix configuration is a valid OMR prefix.
-     *
-     * @param[in] aOnMeshPrefixConfig  The on-mesh prefix configuration to check.
-     *
-     * @retval   TRUE    The prefix is a valid OMR prefix.
-     * @retval   FALSE   The prefix is not a valid OMR prefix.
-     */
-    static bool IsValidOmrPrefix(const NetworkData::OnMeshPrefixConfig &aOnMeshPrefixConfig);
-
-    /**
-     * Checks whether a given prefix is a valid OMR prefix.
-     *
-     * @param[in]  aPrefix  The prefix to check.
-     *
-     * @retval   TRUE    The prefix is a valid OMR prefix.
-     * @retval   FALSE   The prefix is not a valid OMR prefix.
-     */
-    static bool IsValidOmrPrefix(const Ip6::Prefix &aPrefix);
-
-    /**
-     * Initializes a `PrefixTableIterator`.
-     *
-     * An iterator can be initialized again to start from the beginning of the table.
-     *
-     * When iterating over entries in the table, to ensure the entry update times are consistent, they are given
-     * relative to the time the iterator was initialized.
-     *
-     * @param[out] aIterator  The iterator to initialize.
-     */
-    void InitPrefixTableIterator(PrefixTableIterator &aIterator) const { mRxRaTracker.InitIterator(aIterator); }
-
-    /**
-     * Iterates over entries in the discovered prefix table.
-     *
-     * @param[in,out] aIterator  An iterator.
-     * @param[out]    aEntry     A reference to the entry to populate.
-     *
-     * @retval kErrorNone        Got the next entry, @p aEntry is updated and @p aIterator is advanced.
-     * @retval kErrorNotFound    No more entries in the table.
-     */
-    Error GetNextPrefixTableEntry(PrefixTableIterator &aIterator, PrefixTableEntry &aEntry) const
-    {
-        return mRxRaTracker.GetNextEntry(aIterator, aEntry);
-    }
-
-    /**
-     * Iterates over discovered router entries on infrastructure link.
-     *
-     * @param[in,out] aIterator  An iterator.
-     * @param[out]    aEntry     A reference to the entry to populate.
-     *
-     * @retval kErrorNone        Got the next router info, @p aEntry is updated and @p aIterator is advanced.
-     * @retval kErrorNotFound    No more routers.
-     */
-    Error GetNextRouterEntry(PrefixTableIterator &aIterator, RouterEntry &aEntry) const
-    {
-        return mRxRaTracker.GetNextRouter(aIterator, aEntry);
-    }
-
-    /**
-     * Iterates over the discovered Recursive DNS Server (RDNSS) address entries.
-     *
-     * @param[in,out] aIterator    An iterator.
-     * @param[out]    aEntry       A reference to the entry to populate.
-     *
-     * @retval kErrorNone         Iterated to the next address entry, @p aEntry and @p aIterator are updated.
-     * @retval kErrorNotFound     No more entries in the table.
-     * @retval kErrorInvalidArgs  The @p aIterator is not valid (e.g. used to iterate over other entry types).
-     */
-    Error GetNextRdnssAddrEntry(PrefixTableIterator &aIterator, RdnssAddrEntry &aEntry)
-    {
-        return mRxRaTracker.GetNextRdnssAddr(aIterator, aEntry);
-    }
-
-    /**
-     * Sets the callback to be notified of changes to discovered Recursive DNS Server (RDNSS) address entries.
-     *
-     * A subsequent call to this method, replaces a previously set callback.
-     *
-     * @param[in] aCallback   The callback function pointer. Can be `nullptr` if no callback is required.
-     * @param[in] aConext     An arbitrary context information (used when invoking the callback).
-     *
-     */
-    void SetRdnssAddrCallback(RdnssAddrCallback aCallback, void *aContext)
-    {
-        mRxRaTracker.SetRdnssCallback(aCallback, aContext);
-    }
-
-#if OPENTHREAD_CONFIG_BORDER_ROUTING_TRACK_PEER_BR_INFO_ENABLE
-
-    /**
-     * Iterates over the peer BRs found in the Network Data.
-     *
-     * @param[in,out] aIterator  An iterator.
-     * @param[out]    aEntry     A reference to the entry to populate.
-     *
-     * @retval kErrorNone        Got the next peer BR info, @p aEntry is updated and @p aIterator is advanced.
-     * @retval kErrorNotFound    No more PR beers in the list.
-     */
-    Error GetNextPeerBrEntry(PrefixTableIterator &aIterator, PeerBrEntry &aEntry) const
-    {
-        return mNetDataPeerBrTracker.GetNext(aIterator, aEntry);
-    }
-
-    /**
-     * Returns the number of peer BRs found in the Network Data.
-     *
-     * The count does not include this device itself (when it itself is acting as a BR).
-     *
-     * @param[out] aMinAge   Reference to an `uint32_t` to return the minimum age among all peer BRs.
-     *                       Age is represented as seconds since appearance of the BR entry in the Network Data.
-     *
-     * @returns The number of peer BRs.
-     */
-    uint16_t CountPeerBrs(uint32_t &aMinAge) const { return mNetDataPeerBrTracker.CountPeerBrs(aMinAge); }
-
-#endif // OPENTHREAD_CONFIG_BORDER_ROUTING_TRACK_PEER_BR_INFO_ENABLE
-
 #if OPENTHREAD_CONFIG_BORDER_ROUTING_MULTI_AIL_DETECTION_ENABLE
 
     /**
@@ -639,32 +517,52 @@ public:
      * @param[in] aCallback  A pointer to a callback function
      * @param[in] aContext   A pointer to arbitrary context information.
      */
-    void SetRequestDhcp6PdCallback(PdCallback aCallback, void *aContext)
+    void SetDhcp6PdCallback(Dhcp6PdCallback aCallback, void *aContext)
     {
         mPdPrefixManager.SetStateCallback(aCallback, aContext);
     }
 
     /**
+     * Processes a delegated DHCPv6-PD prefix.
+     *
+     * Can be called again with a different prefix to report multiple delegated prefixes. Subsequent call for same
+     * prefix will renew or update the delegated prefix lifetimes.
+     *
+     * @param[in] aPrefix  The delegated DHCPv6-PD prefix.
+     */
+    void ProcessDhcp6PdPrefix(const Dhcp6PdPrefix &aPrefix) { mPdPrefixManager.ProcessPrefix(aPrefix); }
+
+    /**
+     * Processes delegated DHCPv6-PD prefixes from a Router Advertisement.
+     *
+     * @param[in] aRaPacket    The Router Advertisement packet.
+     */
+    void ProcessDhcp6PdPrefixesFromRa(const InfraIf::Icmp6Packet &aRaPacket)
+    {
+        mPdPrefixManager.ProcessPrefixesFromRa(aRaPacket);
+    }
+
+    /**
      * Returns the DHCPv6-PD based off-mesh-routable (OMR) prefix.
      *
-     * @param[out] aPrefixInfo      A reference to where the prefix info will be output to.
+     * @param[out] aPrefix          A reference to return the DHCPv6 prefix.
      *
      * @retval kErrorNone           Successfully retrieved the OMR prefix.
      * @retval kErrorNotFound       There are no valid PD prefix on this BR.
      * @retval kErrorInvalidState   The Border Routing Manager is not initialized yet.
      */
-    Error GetPdOmrPrefix(PrefixTableEntry &aPrefixInfo) const;
+    Error GetDhcp6PdOmrPrefix(Dhcp6PdPrefix &aPrefix) const;
 
     /**
      * Returns platform generated RA message processed counters and information.
      *
-     * @param[out] aPdProcessedRaInfo  A reference to where the PD processed RA info will be output to.
+     * @param[out] aCounters  A reference to return DHCPv6-PD counters.
      *
      * @retval kErrorNone           Successfully retrieved the Info.
-     * @retval kErrorNotFound       There are no valid RA process info on this BR.
+     * @retval kErrorNotFound       There is no valid delegated PD prefix.
      * @retval kErrorInvalidState   The Border Routing Manager is not initialized yet.
      */
-    Error GetPdProcessedRaInfo(PdProcessedRaInfo &aPdProcessedRaInfo);
+    Error GetDhcp6PdCounters(Dhcp6PdCounters &aCounters);
 
 #endif // OPENTHREAD_CONFIG_BORDER_ROUTING_DHCP6_PD_ENABLE
 
@@ -701,10 +599,9 @@ private:
     static constexpr uint8_t kMaxOnMeshPrefixes = OPENTHREAD_CONFIG_BORDER_ROUTING_MAX_ON_MESH_PREFIXES;
 
     // Prefix length in bits.
-    static constexpr uint8_t kOmrPrefixLength    = 64;
-    static constexpr uint8_t kOnLinkPrefixLength = 64;
-    static constexpr uint8_t kBrUlaPrefixLength  = 48;
-    static constexpr uint8_t kNat64PrefixLength  = 96;
+    static constexpr uint8_t kOmrPrefixLength   = OmrPrefix::kPrefixLength;
+    static constexpr uint8_t kBrUlaPrefixLength = 48;
+    static constexpr uint8_t kNat64PrefixLength = 96;
 
     // Subnet IDs for OMR and NAT64 prefixes.
     static constexpr uint16_t kOmrPrefixSubnetId   = 1;
@@ -714,19 +611,6 @@ private:
     static constexpr uint32_t kDefaultOmrPrefixLifetime    = 1800;
     static constexpr uint32_t kDefaultOnLinkPrefixLifetime = 1800;
     static constexpr uint32_t kDefaultNat64PrefixLifetime  = 300;
-
-    // The entry stale time in seconds.
-    //
-    // The amount of time that can pass after the last time an RA from
-    // a particular router has been received advertising an on-link
-    // or route prefix before we assume the prefix entry is stale.
-    //
-    // If multiple routers advertise the same on-link or route prefix,
-    // the stale time for the prefix is determined by the latest
-    // stale time among all corresponding entries. Stale time
-    // expiration triggers tx of Router Solicitation (RS) messages
-
-    static constexpr uint32_t kStaleTime = 600; // 10 minutes.
 
     // RA transmission constants (in milliseconds). Initially, three
     // RAs are sent with a short interval of 16 seconds (± 2 seconds
@@ -746,20 +630,8 @@ private:
     static constexpr uint32_t kEvaluationInterval = Time::kOneSecondInMsec * 3;
     static constexpr uint16_t kEvaluationJitter   = Time::kOneSecondInMsec * 1;
 
-    //------------------------------------------------------------------------------------------------------------------
-    // Typedefs
-
-    using Option                   = Ip6::Nd::Option;
-    using PrefixInfoOption         = Ip6::Nd::PrefixInfoOption;
-    using RouteInfoOption          = Ip6::Nd::RouteInfoOption;
-    using RaFlagsExtOption         = Ip6::Nd::RaFlagsExtOption;
-    using RecursiveDnsServerOption = Ip6::Nd::RecursiveDnsServerOption;
-    using RouterAdvert             = Ip6::Nd::RouterAdvert;
-    using NeighborAdvertMessage    = Ip6::Nd::NeighborAdvertMessage;
-    using TxMessage                = Ip6::Nd::TxMessage;
-    using NeighborSolicitHeader    = Ip6::Nd::NeighborSolicitHeader;
-    using RouterSolicitHeader      = Ip6::Nd::RouterSolicitHeader;
-    using LinkLayerAddress         = InfraIf::LinkLayerAddress;
+    typedef Ip6::Nd::Option    Option;
+    typedef Ip6::Nd::TxMessage TxMessage;
 
     //------------------------------------------------------------------------------------------------------------------
     // Enumerations
@@ -768,13 +640,6 @@ private:
     {
         kInvalidateAllPrevPrefixes,
         kAdvPrefixesFromNetData,
-    };
-
-    enum RouterAdvOrigin : uint8_t // Origin of a received Router Advert message.
-    {
-        kAnotherRouter,        // From another router on infra-if.
-        kThisBrRoutingManager, // From this BR generated by `RoutingManager` itself.
-        kThisBrOtherEntity,    // From this BR generated by another sw entity.
     };
 
     enum ScheduleMode : uint8_t // Used in `ScheduleRoutingPolicyEvaluation()`
@@ -787,152 +652,6 @@ private:
 
     //------------------------------------------------------------------------------------------------------------------
     // Nested types
-
-    struct ExpirationChecker
-    {
-        explicit ExpirationChecker(TimeMilli aNow) { mNow = aNow; }
-        TimeMilli mNow;
-    };
-
-    class LifetimedPrefix
-    {
-        // Represents an IPv6 prefix with its valid lifetime. Used as
-        // base class for `OnLinkPrefix` or `RoutePrefix`.
-
-    public:
-        const Ip6::Prefix &GetPrefix(void) const { return mPrefix; }
-        Ip6::Prefix       &GetPrefix(void) { return mPrefix; }
-        const TimeMilli   &GetLastUpdateTime(void) const { return mLastUpdateTime; }
-        uint32_t           GetValidLifetime(void) const { return mValidLifetime; }
-        TimeMilli          GetExpireTime(void) const { return CalculateExpirationTime(mValidLifetime); }
-
-        bool Matches(const Ip6::Prefix &aPrefix) const { return (mPrefix == aPrefix); }
-        bool Matches(const ExpirationChecker &aChecker) const { return (GetExpireTime() <= aChecker.mNow); }
-
-        void SetStaleTimeCalculated(bool aFlag) { mStaleTimeCalculated = aFlag; }
-        bool IsStaleTimeCalculated(void) const { return mStaleTimeCalculated; }
-
-        void SetDisregardFlag(bool aFlag) { mDisregard = aFlag; }
-        bool ShouldDisregard(void) const { return mDisregard; }
-
-    protected:
-        LifetimedPrefix(void) = default;
-
-        TimeMilli CalculateExpirationTime(uint32_t aLifetime) const;
-
-        Ip6::Prefix mPrefix;
-        bool        mDisregard : 1;
-        bool        mStaleTimeCalculated : 1;
-        uint32_t    mValidLifetime;
-        TimeMilli   mLastUpdateTime;
-    };
-
-    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-    class OnLinkPrefix : public LifetimedPrefix, public Clearable<OnLinkPrefix>
-    {
-    public:
-        void      SetFrom(const PrefixInfoOption &aPio);
-        void      SetFrom(const PrefixTableEntry &aPrefixTableEntry);
-        uint32_t  GetPreferredLifetime(void) const { return mPreferredLifetime; }
-        void      ClearPreferredLifetime(void) { mPreferredLifetime = 0; }
-        bool      IsDeprecated(void) const;
-        TimeMilli GetDeprecationTime(void) const;
-        TimeMilli GetStaleTime(void) const;
-        void      AdoptValidAndPreferredLifetimesFrom(const OnLinkPrefix &aPrefix);
-        void      CopyInfoTo(PrefixTableEntry &aEntry, TimeMilli aNow) const;
-        bool      IsFavoredOver(const Ip6::Prefix &aPrefix) const;
-
-    private:
-        static constexpr uint32_t kFavoredMinPreferredLifetime = 1800; // In sec.
-
-        uint32_t mPreferredLifetime;
-    };
-
-    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-    class RoutePrefix : public LifetimedPrefix, public Clearable<RoutePrefix>
-    {
-    public:
-        void            SetFrom(const RouteInfoOption &aRio);
-        void            SetFrom(const RouterAdvert::Header &aRaHeader);
-        void            ClearValidLifetime(void) { mValidLifetime = 0; }
-        TimeMilli       GetStaleTime(void) const;
-        RoutePreference GetRoutePreference(void) const { return mRoutePreference; }
-        void            CopyInfoTo(PrefixTableEntry &aEntry, TimeMilli aNow) const;
-
-    private:
-        RoutePreference mRoutePreference;
-    };
-
-    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-    class RdnssAddress
-    {
-    public:
-        void                SetFrom(const RecursiveDnsServerOption &aRdnss, uint8_t aAddressIndex);
-        const Ip6::Address &GetAddress(void) const { return mAddress; }
-        const TimeMilli    &GetLastUpdateTime(void) const { return mLastUpdateTime; }
-        uint32_t            GetLifetime(void) const { return mLifetime; }
-        TimeMilli           GetExpireTime(void) const;
-        void                ClearLifetime(void) { mLifetime = 0; }
-        void                CopyInfoTo(RdnssAddrEntry &aEntry, TimeMilli aNow) const;
-
-        bool Matches(const Ip6::Address &aAddress) const { return (mAddress == aAddress); }
-        bool Matches(const ExpirationChecker &aChecker) const { return (GetExpireTime() <= aChecker.mNow); }
-
-    private:
-        Ip6::Address mAddress;
-        uint32_t     mLifetime;
-        TimeMilli    mLastUpdateTime;
-    };
-
-    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-#if OPENTHREAD_CONFIG_BORDER_ROUTING_TRACK_PEER_BR_INFO_ENABLE
-
-    class RxRaTracker;
-
-    class NetDataPeerBrTracker : public InstanceLocator
-    {
-        friend class RxRaTracker;
-
-    public:
-        explicit NetDataPeerBrTracker(Instance &aInstance);
-
-        uint16_t CountPeerBrs(uint32_t &aMinAge) const;
-        Error    GetNext(PrefixTableIterator &aIterator, PeerBrEntry &aEntry) const;
-
-        void HandleNotifierEvents(Events aEvents);
-
-    private:
-        struct PeerBr : LinkedListEntry<PeerBr>, Heap::Allocatable<PeerBr>
-        {
-            struct Filter
-            {
-                Filter(const NetworkData::Rlocs &aRlocs)
-                    : mExcludeRlocs(aRlocs)
-                {
-                }
-
-                const NetworkData::Rlocs &mExcludeRlocs;
-            };
-
-            uint32_t GetAge(uint32_t aUptime) const { return aUptime - mDiscoverTime; }
-            bool     Matches(uint16_t aRloc16) const { return mRloc16 == aRloc16; }
-            bool     Matches(const Filter &aFilter) const { return !aFilter.mExcludeRlocs.Contains(mRloc16); }
-
-            PeerBr  *mNext;
-            uint16_t mRloc16;
-            uint32_t mDiscoverTime;
-        };
-
-        OwningList<PeerBr> mPeerBrs;
-    };
-
-#endif // OPENTHREAD_CONFIG_BORDER_ROUTING_TRACK_PEER_BR_INFO_ENABLE
-
-    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 #if OPENTHREAD_CONFIG_BORDER_ROUTING_MULTI_AIL_DETECTION_ENABLE
 
@@ -975,342 +694,12 @@ private:
 
         bool           mDetected;
         uint16_t       mNetDataPeerBrCount;
-        uint16_t       mRxRaTrackerReachablePeerBrCount;
+        uint16_t       mReachablePeerBrCount;
         DetectTimer    mTimer;
         DetectCallback mCallback;
     };
 
 #endif // OPENTHREAD_CONFIG_BORDER_ROUTING_MULTI_AIL_DETECTION_ENABLE
-
-    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-    void HandleRxRaTrackerSignalTask(void) { mRxRaTracker.HandleSignalTask(); }
-    void HandleRxRaTrackerRdnssAddrTask(void) { mRxRaTracker.HandleRdnssAddrTask(); }
-    void HandleRxRaTrackerExpirationTimer(void) { mRxRaTracker.HandleExpirationTimer(); }
-    void HandleRxRaTrackerStaleTimer(void) { mRxRaTracker.HandleStaleTimer(); }
-    void HandleRxRaTrackerRouterTimer(void) { mRxRaTracker.HandleRouterTimer(); }
-    void HandleRxRaTrackerRdnssAddrTimer(void) { mRxRaTracker.HandleRdnssAddrTimer(); }
-
-    class RxRaTracker : public InstanceLocator
-    {
-        // Processes received RA and NA messages tracking a table of active
-        // routers and their advertised on-link and route prefixes. Also
-        // manages prefix lifetimes and router reachability (sending NS probes
-        // as needed).
-        //
-        // When there is any change in the table (an entry is added, removed,
-        // or modified), it signals the change to `RoutingManager` by calling
-        // `HandleRaPrefixTableChanged()` callback. A `Tasklet` is used for
-        // signalling which ensures that if there are multiple changes within
-        // the same flow of execution, the callback is invoked after all the
-        // changes are processed.
-
-        friend class NetDataPeerBrTracker;
-
-    public:
-        explicit RxRaTracker(Instance &aInstance);
-
-        void Start(void);
-        void Stop(void);
-
-        void SetRdnssCallback(RdnssAddrCallback aCallback, void *aContext) { mRdnssCallback.Set(aCallback, aContext); }
-
-        void ProcessRouterAdvertMessage(const RouterAdvert::RxMessage &aRaMessage,
-                                        const Ip6::Address            &aSrcAddress,
-                                        RouterAdvOrigin                aRaOrigin);
-        void ProcessNeighborAdvertMessage(const NeighborAdvertMessage &aNaMessage);
-
-        // Decision factors
-        bool ContainsDefaultOrNonUlaRoutePrefix(void) const { return mDecisionFactors.mHasNonUlaRoute; }
-        bool ContainsNonUlaOnLinkPrefix(void) const { return mDecisionFactors.mHasNonUlaOnLink; }
-        bool ContainsUlaOnLinkPrefix(void) const { return mDecisionFactors.mHasUlaOnLink; }
-
-        const Ip6::Prefix &GetFavoredOnLinkPrefix(void) const { return mDecisionFactors.mFavoredOnLinkPrefix; }
-        void               SetHeaderFlagsOn(RouterAdvert::Header &aHeader) const;
-
-        const RouterAdvert::Header &GetLocalRaHeaderToMirror(void) const { return mLocalRaHeader; }
-
-        bool IsAddressOnLink(const Ip6::Address &aAddress) const;
-        bool IsAddressReachableThroughExplicitRoute(const Ip6::Address &aAddress) const;
-
-        // Iterating over discovered items
-        void  InitIterator(PrefixTableIterator &aIterator) const;
-        Error GetNextEntry(PrefixTableIterator &aIterator, PrefixTableEntry &aEntry) const;
-        Error GetNextRouter(PrefixTableIterator &aIterator, RouterEntry &aEntry) const;
-        Error GetNextRdnssAddr(PrefixTableIterator &aIterator, RdnssAddrEntry &aEntry) const;
-
-#if OPENTHREAD_CONFIG_BORDER_ROUTING_TRACK_PEER_BR_INFO_ENABLE
-        uint16_t CountReachablePeerBrs(void) const;
-#endif
-
-        // Callbacks notifying of changes
-        void RemoveOrDeprecateOldEntries(TimeMilli aTimeThreshold);
-        void HandleLocalOnLinkPrefixChanged(void);
-        void HandleNetDataChange(void);
-
-        // Tasklet or timer callbacks
-        void HandleSignalTask(void);
-        void HandleRdnssAddrTask(void);
-        void HandleExpirationTimer(void);
-        void HandleStaleTimer(void);
-        void HandleRouterTimer(void);
-        void HandleRdnssAddrTimer(void);
-
-    private:
-        //-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-
-        template <class Type>
-        struct Entry : public Type,
-                       public LinkedListEntry<Entry<Type>>,
-#if OPENTHREAD_CONFIG_BORDER_ROUTING_USE_HEAP_ENABLE
-                       public Heap::Allocatable<Entry<Type>>
-#else
-                       public InstanceLocatorInit
-#endif
-        {
-#if !OPENTHREAD_CONFIG_BORDER_ROUTING_USE_HEAP_ENABLE
-            void Init(Instance &aInstance) { InstanceLocatorInit::Init(aInstance); }
-            void Free(void);
-#endif
-
-            Entry<Type> *mNext;
-        };
-
-        //-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-
-        struct Router : public Clearable<Router>
-        {
-            // Reachability timeout intervals before starting Neighbor
-            // Solicitation (NS) probes. Generally 60 seconds (± 2
-            // seconds jitter) is used. For peer BRs a longer timeout
-            // of 200 seconds (3 min and 20 seconds) is used. This is
-            // selected to be longer than regular RA beacon interval
-            // of 3 minutes (± 15 seconds jitter).
-
-            static constexpr uint32_t kReachableInterval = OPENTHREAD_CONFIG_BORDER_ROUTING_ROUTER_ACTIVE_CHECK_TIMEOUT;
-            static constexpr uint32_t kPeerBrReachableInterval = Time::kOneSecondInMsec * 200;
-
-            static constexpr uint8_t  kMaxNsProbes          = 5;    // Max number of NS probe attempts.
-            static constexpr uint32_t kNsProbeRetryInterval = 1000; // In msec. Time between NS probe attempts.
-            static constexpr uint32_t kNsProbeTimeout       = 2000; // In msec. Max Wait time after last NS probe.
-            static constexpr uint32_t kJitter               = 2000; // In msec. Jitter to randomize probe starts.
-
-            static_assert(kMaxNsProbes < 255, "kMaxNsProbes MUST not be 255");
-
-            struct EmptyChecker
-            {
-            };
-
-            bool IsReachable(void) const { return mNsProbeCount <= kMaxNsProbes; }
-            bool ShouldCheckReachability(void) const;
-            void ResetReachabilityState(void);
-            void DetermineReachabilityTimeout(void);
-            bool Matches(const Ip6::Address &aAddress) const { return aAddress == mAddress; }
-            bool Matches(const EmptyChecker &aChecker);
-            bool IsPeerBr(void) const;
-            void CopyInfoTo(RouterEntry &aEntry, TimeMilli aNow, uint32_t aUptime) const;
-
-            using OnLinkPrefixList = OwningList<Entry<OnLinkPrefix>>;
-            using RoutePrefixList  = OwningList<Entry<RoutePrefix>>;
-            using RdnssAddressList = OwningList<Entry<RdnssAddress>>;
-
-            // `mDiscoverTime` tracks the initial discovery time of
-            // this router. To accommodate longer durations, the
-            // `Uptime` is used, as `TimeMilli` (which uses `uint32_t`
-            // intervals) would be limited to tracking ~ 49 days.
-            //
-            // `mLastUpdateTime` tracks the most recent time an RA or
-            // NA was received from this router. It is bounded due to
-            // the frequency of reachability checks, so we can safely
-            // use `TimeMilli` for it.
-
-            Ip6::Address     mAddress;
-            OnLinkPrefixList mOnLinkPrefixes;
-            RoutePrefixList  mRoutePrefixes;
-            RdnssAddressList mRdnssAddresses;
-            uint32_t         mDiscoverTime;
-            TimeMilli        mLastUpdateTime;
-            TimeMilli        mTimeoutTime;
-            uint8_t          mNsProbeCount;
-            bool             mManagedAddressConfigFlag : 1;
-            bool             mOtherConfigFlag : 1;
-            bool             mSnacRouterFlag : 1;
-            bool             mIsLocalDevice : 1;
-            bool             mAllEntriesDisregarded : 1;
-        };
-
-        //-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-
-        class Iterator : public PrefixTableIterator
-        {
-        public:
-            enum Type : uint8_t
-            {
-                kUnspecified,
-                kRouterIterator,
-                kPrefixIterator,
-                kRdnssAddrIterator,
-                kPeerBrIterator,
-            };
-
-            enum EntryType : uint8_t
-            {
-                kOnLinkPrefix,
-                kRoutePrefix,
-            };
-
-            void                 Init(const Entry<Router> *aRoutersHead, uint32_t aUptime);
-            Error                AdvanceToNextRouter(Type aType);
-            Error                AdvanceToNextEntry(void);
-            Error                AdvanceToNextRdnssAddrEntry(void);
-            uint32_t             GetInitUptime(void) const { return mData0; }
-            TimeMilli            GetInitTime(void) const { return TimeMilli(mData1); }
-            Type                 GetType(void) const { return static_cast<Type>(mData2); }
-            const Entry<Router> *GetRouter(void) const { return static_cast<const Entry<Router> *>(mPtr1); }
-            EntryType            GetEntryType(void) const { return static_cast<EntryType>(mData3); }
-
-            template <typename ObjectType> const Entry<ObjectType> *GetEntry(void) const
-            {
-                return static_cast<const Entry<ObjectType> *>(mPtr2);
-            }
-
-#if OPENTHREAD_CONFIG_BORDER_ROUTING_TRACK_PEER_BR_INFO_ENABLE
-            using PeerBr = NetDataPeerBrTracker::PeerBr;
-
-            Error         AdvanceToNextPeerBr(const PeerBr *aPeerBrsHead);
-            const PeerBr *GetPeerBrEntry(void) const { return static_cast<const PeerBr *>(mPtr2); }
-#endif
-
-        private:
-            void SetRouter(const Entry<Router> *aRouter) { mPtr1 = aRouter; }
-            void SetInitUptime(uint32_t aUptime) { mData0 = aUptime; }
-            void SetInitTime(void) { mData1 = TimerMilli::GetNow().GetValue(); }
-            void SetEntry(const void *aEntry) { mPtr2 = aEntry; }
-            bool HasEntry(void) const { return mPtr2 != nullptr; }
-            void SetEntryType(EntryType aType) { mData3 = aType; }
-            void SetType(Type aType) { mData2 = aType; }
-        };
-
-        //-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-
-#if !OPENTHREAD_CONFIG_BORDER_ROUTING_USE_HEAP_ENABLE
-        static constexpr uint16_t kMaxRouters = OPENTHREAD_CONFIG_BORDER_ROUTING_MAX_DISCOVERED_ROUTERS;
-        static constexpr uint16_t kMaxEntries = OPENTHREAD_CONFIG_BORDER_ROUTING_MAX_DISCOVERED_PREFIXES;
-
-        union SharedEntry
-        {
-            SharedEntry(void) { mNext = nullptr; }
-            void               SetNext(SharedEntry *aNext) { mNext = aNext; }
-            SharedEntry       *GetNext(void) { return mNext; }
-            const SharedEntry *GetNext(void) const { return mNext; }
-
-            template <class Type> Entry<Type> &GetEntry(void);
-
-            SharedEntry        *mNext;
-            Entry<OnLinkPrefix> mOnLinkEntry;
-            Entry<RoutePrefix>  mRouteEntry;
-            Entry<RdnssAddress> mRdnssAddrEntry;
-        };
-#endif
-
-        //-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-
-        struct DecisionFactors : public Clearable<DecisionFactors>, public Equatable<DecisionFactors>
-        {
-            DecisionFactors(void) { Clear(); }
-
-            bool HasFavoredOnLink(void) const { return (mFavoredOnLinkPrefix.GetLength() != 0); }
-            void UpdateFlagsFrom(const Router &aRouter);
-            void UpdateFrom(const OnLinkPrefix &aOnLinkPrefix);
-            void UpdateFrom(const RoutePrefix &aRoutePrefix);
-
-            Ip6::Prefix mFavoredOnLinkPrefix;
-            bool        mHasNonUlaRoute : 1;
-            bool        mHasNonUlaOnLink : 1;
-            bool        mHasUlaOnLink : 1;
-            bool        mHeaderManagedAddressConfigFlag : 1;
-            bool        mHeaderOtherConfigFlag : 1;
-        };
-
-        //-  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-
-        void ProcessRaHeader(const RouterAdvert::Header &aRaHeader, Router &aRouter, RouterAdvOrigin aRaOrigin);
-        void ProcessPrefixInfoOption(const PrefixInfoOption &aPio, Router &aRouter);
-        void ProcessRouteInfoOption(const RouteInfoOption &aRio, Router &aRouter);
-        void ProcessRecursiveDnsServerOption(const RecursiveDnsServerOption &aRdnss, Router &aRouter);
-        void Evaluate(void);
-        void DetermineStaleTimeFor(const OnLinkPrefix &aPrefix, NextFireTime &aStaleTime);
-        void DetermineStaleTimeFor(const RoutePrefix &aPrefix, NextFireTime &aStaleTime);
-        void SendNeighborSolicitToRouter(const Router &aRouter);
-#if OPENTHREAD_CONFIG_BORDER_ROUTING_USE_HEAP_ENABLE
-        template <class Type> Entry<Type> *AllocateEntry(void) { return Entry<Type>::Allocate(); }
-#else
-        template <class Type> Entry<Type> *AllocateEntry(void);
-#endif
-
-        using SignalTask      = TaskletIn<RoutingManager, &RoutingManager::HandleRxRaTrackerSignalTask>;
-        using RdnssAddrTask   = TaskletIn<RoutingManager, &RoutingManager::HandleRxRaTrackerRdnssAddrTask>;
-        using ExpirationTimer = TimerMilliIn<RoutingManager, &RoutingManager::HandleRxRaTrackerExpirationTimer>;
-        using StaleTimer      = TimerMilliIn<RoutingManager, &RoutingManager::HandleRxRaTrackerStaleTimer>;
-        using RouterTimer     = TimerMilliIn<RoutingManager, &RoutingManager::HandleRxRaTrackerRouterTimer>;
-        using RdnssAddrTimer  = TimerMilliIn<RoutingManager, &RoutingManager::HandleRxRaTrackerRdnssAddrTimer>;
-        using RouterList      = OwningList<Entry<Router>>;
-        using RdnssCallback   = Callback<RdnssAddrCallback>;
-
-        DecisionFactors      mDecisionFactors;
-        RouterList           mRouters;
-        ExpirationTimer      mExpirationTimer;
-        StaleTimer           mStaleTimer;
-        RouterTimer          mRouterTimer;
-        RdnssAddrTimer       mRdnssAddrTimer;
-        SignalTask           mSignalTask;
-        RdnssAddrTask        mRdnssAddrTask;
-        RdnssCallback        mRdnssCallback;
-        RouterAdvert::Header mLocalRaHeader;
-        TimeMilli            mLocalRaHeaderUpdateTime;
-
-#if !OPENTHREAD_CONFIG_BORDER_ROUTING_USE_HEAP_ENABLE
-        Pool<SharedEntry, kMaxEntries>   mEntryPool;
-        Pool<Entry<Router>, kMaxRouters> mRouterPool;
-#endif
-    };
-
-    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-    class OmrPrefixManager;
-
-    class OmrPrefix : public Clearable<OmrPrefix>, public Equatable<OmrPrefix>
-    {
-        friend class OmrPrefixManager;
-
-    public:
-        OmrPrefix(void) { Clear(); }
-
-        bool               IsEmpty(void) const { return (mPrefix.GetLength() == 0); }
-        const Ip6::Prefix &GetPrefix(void) const { return mPrefix; }
-        RoutePreference    GetPreference(void) const { return mPreference; }
-        bool               IsDomainPrefix(void) const { return mIsDomainPrefix; }
-
-    protected:
-        Ip6::Prefix     mPrefix;
-        RoutePreference mPreference;
-        bool            mIsDomainPrefix;
-    };
-
-    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-    class FavoredOmrPrefix : public OmrPrefix
-    {
-        friend class OmrPrefixManager;
-
-    public:
-        bool IsInfrastructureDerived(void) const;
-
-    private:
-        void SetFrom(const NetworkData::OnMeshPrefixConfig &aOnMeshPrefixConfig);
-        void SetFrom(const OmrPrefix &aOmrPrefix);
-        bool IsFavoredOver(const NetworkData::OnMeshPrefixConfig &aOmrPrefixConfig) const;
-    };
 
     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1337,8 +726,8 @@ private:
 
         typedef String<kInfoStringSize> InfoString;
 
-        void       SetFavordPrefix(const OmrPrefix &aOmrPrefix);
-        void       ClearFavoredPrefix(void) { SetFavordPrefix(OmrPrefix()); }
+        void       SetFavoredPrefix(const OmrPrefix &aOmrPrefix);
+        void       ClearFavoredPrefix(void) { SetFavoredPrefix(OmrPrefix()); }
         void       DetermineFavoredPrefixInNetData(FavoredOmrPrefix &aFavoredPrefix);
         void       UpdateLocalPrefix(void);
         Error      AddLocalToNetData(void);
@@ -1375,7 +764,7 @@ private:
         void               Stop(void);
         void               Evaluate(void);
         const Ip6::Prefix &GetLocalPrefix(void) const { return mLocalPrefix; }
-        const Ip6::Prefix &GetFavoredDiscoveredPrefix(void) const { return mFavoredDiscoveredPrefix; }
+        const Ip6::Prefix &GetFavoredPrefix(void) const { return mFavoredPrefix; }
         bool               AddressMatchesLocalPrefix(const Ip6::Address &aAddress) const;
         bool               IsInitalEvaluationDone(void) const;
         void               HandleRaPrefixTableChanged(void);
@@ -1389,6 +778,8 @@ private:
 #endif
 
     private:
+        static constexpr uint8_t kOnLinkPrefixLength = 64;
+
         enum State : uint8_t // State of `mLocalPrefix`
         {
             kIdle,
@@ -1407,6 +798,8 @@ private:
 
         State GetState(void) const { return mState; }
         void  SetState(State aState);
+        void  SetAilPrefix(const Ip6::Prefix &aPrefix);
+        void  SetFavoredPrefix(const Ip6::Prefix &aPrefix);
         bool  IsPublishingOrAdvertising(void) const;
         void  GenerateLocalPrefix(void);
         void  PublishAndAdvertise(void);
@@ -1421,10 +814,11 @@ private:
 
         using ExpireTimer = TimerMilliIn<RoutingManager, &RoutingManager::HandleOnLinkPrefixManagerTimer>;
 
-        Ip6::Prefix                       mLocalPrefix;
         State                             mState;
         TimeMilli                         mExpireTime;
-        Ip6::Prefix                       mFavoredDiscoveredPrefix;
+        Ip6::Prefix                       mLocalPrefix;
+        Ip6::Prefix                       mAilPrefix;
+        Ip6::Prefix                       mFavoredPrefix;
         Array<OldPrefix, kMaxOldPrefixes> mOldLocalPrefixes;
         ExpireTimer                       mTimer;
     };
@@ -1525,12 +919,12 @@ private:
 
     private:
         void Discover(void);
-        void Publish(void);
+        void Publish(const Ip6::Prefix &aPrefix, RoutePreference aPreference);
+        void Unpublish(void);
 
         using Nat64Timer = TimerMilliIn<RoutingManager, &RoutingManager::HandleNat64PrefixManagerTimer>;
 
-        bool mEnabled;
-
+        bool            mEnabled;
         Ip6::Prefix     mInfraIfPrefix;       // The latest NAT64 prefix discovered on the infrastructure interface.
         Ip6::Prefix     mLocalPrefix;         // The local prefix (from BR ULA prefix).
         Ip6::Prefix     mPublishedPrefix;     // The prefix to publish in Net Data (empty or local or from infra-if).
@@ -1668,6 +1062,9 @@ private:
 #if OPENTHREAD_CONFIG_BORDER_ROUTING_DHCP6_PD_ENABLE
 
     void HandlePdPrefixManagerTimer(void) { mPdPrefixManager.HandleTimer(); }
+#if OPENTHREAD_CONFIG_HISTORY_TRACKER_ENABLE
+    void HandlePdPrefixManagerTask(void) { mPdPrefixManager.HandleRecordHistoryTask(); }
+#endif
 
     class PdPrefixManager : public InstanceLocator
     {
@@ -1689,13 +1086,16 @@ private:
         const Ip6::Prefix &GetPrefix(void) const { return mPrefix.GetPrefix(); }
         State              GetState(void) const { return mState; }
 
-        void  ProcessRa(const uint8_t *aRouterAdvert, uint16_t aLength);
-        void  ProcessPrefix(const PrefixTableEntry &aPrefixTableEntry);
-        Error GetPrefixInfo(PrefixTableEntry &aInfo) const;
-        Error GetProcessedRaInfo(PdProcessedRaInfo &aPdProcessedRaInfo) const;
+        void  ProcessPrefixesFromRa(const InfraIf::Icmp6Packet &aRaPacket);
+        void  ProcessPrefix(const Dhcp6PdPrefix &aPrefix);
+        Error GetPrefix(Dhcp6PdPrefix &aPrefix) const;
+        Error GetCounters(Dhcp6PdCounters &aCounters) const;
         void  HandleTimer(void) { WithdrawPrefix(); }
-        void  SetStateCallback(PdCallback aCallback, void *aContext) { mStateCallback.Set(aCallback, aContext); }
+        void  SetStateCallback(Dhcp6PdCallback aCallback, void *aContext) { mStateCallback.Set(aCallback, aContext); }
         void  Evaluate(void);
+#if OPENTHREAD_CONFIG_HISTORY_TRACKER_ENABLE
+        void HandleRecordHistoryTask(void);
+#endif
 
     private:
         class PdPrefix : public OnLinkPrefix
@@ -1709,14 +1109,17 @@ private:
 
         void UpdateState(void);
         void SetState(State aState);
-        void Process(const InfraIf::Icmp6Packet *aRaPacket, const PrefixTableEntry *aPrefixTableEntry);
-        void ProcessPdPrefix(PdPrefix &aPrefix, PdPrefix &aFavoredPrefix);
+        void EvaluateCandidatePrefix(PdPrefix &aPrefix, PdPrefix &aFavoredPrefix);
+        void ApplyFavoredPrefix(const PdPrefix &aFavoredPrefix);
         void WithdrawPrefix(void);
 
         static const char *StateToString(State aState);
 
         using PrefixTimer   = TimerMilliIn<RoutingManager, &RoutingManager::HandlePdPrefixManagerTimer>;
-        using StateCallback = Callback<PdCallback>;
+        using StateCallback = Callback<Dhcp6PdCallback>;
+#if OPENTHREAD_CONFIG_HISTORY_TRACKER_ENABLE
+        using RecordHistoryTask = TaskletIn<RoutingManager, &RoutingManager::HandlePdPrefixManagerTask>;
+#endif
 
         State         mState;
         uint32_t      mNumPlatformPioProcessed;
@@ -1725,6 +1128,9 @@ private:
         StateCallback mStateCallback;
         PrefixTimer   mTimer;
         PdPrefix      mPrefix;
+#if OPENTHREAD_CONFIG_HISTORY_TRACKER_ENABLE
+        RecordHistoryTask mRecordHistoryTask;
+#endif
     };
 
 #endif // OPENTHREAD_CONFIG_BORDER_ROUTING_DHCP6_PD_ENABLE
@@ -1754,18 +1160,9 @@ private:
     void HandleRaPrefixTableChanged(void);
     void HandleLocalOnLinkPrefixChanged(void);
 
-    static TimeMilli CalculateExpirationTime(TimeMilli aUpdateTime, uint32_t aLifetime);
-
     static bool IsValidBrUlaPrefix(const Ip6::Prefix &aBrUlaPrefix);
-    static bool IsValidOnLinkPrefix(const PrefixInfoOption &aPio);
-    static bool IsValidOnLinkPrefix(const Ip6::Prefix &aOnLinkPrefix);
 
-    static void LogRaHeader(const RouterAdvert::Header &aRaHeader);
-    static void LogPrefixInfoOption(const Ip6::Prefix &aPrefix, uint32_t aValidLifetime, uint32_t aPreferredLifetime);
-    static void LogRouteInfoOption(const Ip6::Prefix &aPrefix, uint32_t aLifetime, RoutePreference aPreference);
-    static void LogRecursiveDnsServerOption(const Ip6::Address &aAddress, uint32_t aLifetime);
-
-    static const char *RouterAdvOriginToString(RouterAdvOrigin aRaOrigin);
+    static const char *RouterAdvOriginToString(RxRaTracker::RouterAdvOrigin aRaOrigin);
 
     //------------------------------------------------------------------------------------------------------------------
     // Variables
@@ -1793,15 +1190,9 @@ private:
 
     OnLinkPrefixManager mOnLinkPrefixManager;
 
-#if OPENTHREAD_CONFIG_BORDER_ROUTING_TRACK_PEER_BR_INFO_ENABLE
-    NetDataPeerBrTracker mNetDataPeerBrTracker;
-#endif
-
 #if OPENTHREAD_CONFIG_BORDER_ROUTING_MULTI_AIL_DETECTION_ENABLE
     MultiAilDetector mMultiAilDetector;
 #endif
-
-    RxRaTracker mRxRaTracker;
 
     RoutePublisher mRoutePublisher;
 
@@ -1819,42 +1210,6 @@ private:
 
     RoutingPolicyTimer mRoutingPolicyTimer;
 };
-
-#if !OPENTHREAD_CONFIG_BORDER_ROUTING_USE_HEAP_ENABLE
-
-//----------------------------------------------------------------------------------------------------------------------
-// Template specializations and declarations
-
-template <>
-inline RoutingManager::RxRaTracker::Entry<RoutingManager::OnLinkPrefix>
-    &RoutingManager::RxRaTracker::SharedEntry::GetEntry(void)
-{
-    return mOnLinkEntry;
-}
-
-template <>
-inline RoutingManager::RxRaTracker::Entry<RoutingManager::RoutePrefix>
-    &RoutingManager::RxRaTracker::SharedEntry::GetEntry(void)
-{
-    return mRouteEntry;
-}
-
-template <>
-inline RoutingManager::RxRaTracker::Entry<RoutingManager::RdnssAddress>
-    &RoutingManager::RxRaTracker::SharedEntry::GetEntry(void)
-{
-    return mRdnssAddrEntry;
-}
-
-// Declare template (full) specializations for `Router` type.
-
-template <>
-RoutingManager::RxRaTracker::Entry<RoutingManager::RxRaTracker::Router> *RoutingManager::RxRaTracker::AllocateEntry(
-    void);
-
-template <> void RoutingManager::RxRaTracker::Entry<RoutingManager::RxRaTracker::Router>::Free(void);
-
-#endif // #if !OPENTHREAD_CONFIG_BORDER_ROUTING_USE_HEAP_ENABLE
 
 } // namespace BorderRouter
 

@@ -39,6 +39,7 @@
 extern "C" {
 #endif
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include <openthread/error.h>
@@ -187,6 +188,22 @@ otError otPlatBleGetAdvertisementBuffer(otInstance *aInstance, uint8_t **aAdvert
  * @retval OT_ERROR_INVALID_ARGS   Invalid value has been supplied.
  */
 otError otPlatBleGapAdvSetData(otInstance *aInstance, uint8_t *aAdvertisementData, uint16_t aAdvertisementLen);
+
+/**
+ * Updates BLE Advertising data.
+ *
+ * @note This function shall be used only for BLE Peripheral role.
+ *
+ * @param[in] aInstance          The OpenThread instance structure.
+ * @param[in] aAdvertisementData The formatted TCAT advertisement frame.
+ * @param[in] aAdvertisementLen  The TCAT advertisement frame length.
+ *
+ * @retval OT_ERROR_NONE           Advertising procedure has been started.
+ * @retval OT_ERROR_FAILED         Update of data failed.
+ * @retval OT_ERROR_INVALID_ARGS   Invalid value has been supplied.
+ *
+ */
+otError otPlatBleGapAdvUpdateData(otInstance *aInstance, uint8_t *aAdvertisementData, uint16_t aAdvertisementLen);
 
 /**
  * Starts BLE Advertising procedure.

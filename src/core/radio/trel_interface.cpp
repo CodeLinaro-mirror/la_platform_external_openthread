@@ -43,64 +43,69 @@ RegisterLogModule("TrelInterface");
 
 Interface::Interface(Instance &aInstance)
     : InstanceLocator(aInstance)
-    , mInitialized(false)
-    , mEnabled(false)
+    , mUserEnabled(true)
+    , mStackEnabled(false)
     , mFiltered(false)
+    , mState(kStateUninitialized)
 {
 }
 
 void Interface::Init(void)
 {
-    OT_ASSERT(!mInitialized);
-
-    mInitialized = true;
-
-    if (mEnabled)
-    {
-        mEnabled = false;
-        Enable();
-    }
-}
-
-void Interface::SetEnabled(bool aEnable)
-{
-    if (aEnable)
-    {
-        Enable();
-    }
-    else
-    {
-        Disable();
-    }
-}
-
-void Interface::Enable(void)
-{
-    VerifyOrExit(!mEnabled);
-
-    mEnabled = true;
-    VerifyOrExit(mInitialized);
-
-    otPlatTrelEnable(&GetInstance(), &mUdpPort);
-    Get<PeerDiscoverer>().Start();
-
-    LogInfo("Enabled interface, local port:%u", mUdpPort);
+    VerifyOrExit(mState == kStateUninitialized);
+    mState = kStateDisabled;
+    UpdateState();
 
 exit:
     return;
 }
 
-void Interface::Disable(void)
+void Interface::SetEnabled(bool aEnable, Requester aRequester)
 {
-    VerifyOrExit(mEnabled);
+    switch (aRequester)
+    {
+    case kRequesterUser:
+        VerifyOrExit(mUserEnabled != aEnable);
+        mUserEnabled = aEnable;
+        LogInfo("User %sabled interface", aEnable ? "en" : "dis");
+        break;
 
-    mEnabled = false;
-    VerifyOrExit(mInitialized);
+    case kRequesterStack:
+        VerifyOrExit(mStackEnabled != aEnable);
+        mStackEnabled = aEnable;
+        break;
+    }
 
-    otPlatTrelDisable(&GetInstance());
-    Get<PeerDiscoverer>().Stop();
+    UpdateState();
 
-    LogDebg("Disabled interface");
+exit:
+    return;
+}
+
+void Interface::UpdateState(void)
+{
+    VerifyOrExit(mState != kStateUninitialized);
+
+    if (mUserEnabled && mStackEnabled)
+    {
+        VerifyOrExit(mState == kStateDisabled);
+        mState = kStateEnabled;
+
+        otPlatTrelEnable(&GetInstance(), &mUdpPort);
+        Get<PeerDiscoverer>().Start();
+
+        LogInfo("Enabled interface, local port:%u", mUdpPort);
+    }
+    else
+    {
+        VerifyOrExit(mState == kStateEnabled);
+        mState = kStateDisabled;
+
+        otPlatTrelDisable(&GetInstance());
+        Get<PeerDiscoverer>().Stop();
+
+        LogInfo("Disabled interface");
+    }
 
 exit:
     return;
@@ -110,12 +115,12 @@ const Counters *Interface::GetCounters(void) const { return otPlatTrelGetCounter
 
 void Interface::ResetCounters(void) { otPlatTrelResetCounters(&GetInstance()); }
 
-Error Interface::Send(const Packet &aPacket, bool aIsDiscovery)
+Error Interface::Send(Packet &aPacket, bool aIsDiscovery)
 {
     Error error = kErrorNone;
     Peer *peerEntry;
 
-    VerifyOrExit(mInitialized && mEnabled, error = kErrorAbort);
+    VerifyOrExit(IsEnabled(), error = kErrorAbort);
     VerifyOrExit(!mFiltered);
 
     switch (aPacket.GetHeader().GetType())
@@ -123,12 +128,33 @@ Error Interface::Send(const Packet &aPacket, bool aIsDiscovery)
     case Header::kTypeBroadcast:
         for (const Peer &peer : Get<PeerTable>())
         {
+            uint32_t        originalPacketNumber = aPacket.GetHeader().GetPacketNumber();
+            Header::AckMode originalAckMode      = aPacket.GetHeader().GetAckMode();
+            Neighbor       *neighbor;
+
+            if (!peer.HasValidSockAddr())
+            {
+                continue;
+            }
+
             if (!aIsDiscovery && (peer.GetExtPanId() != Get<MeshCoP::ExtendedPanIdManager>().GetExtPanId()))
             {
                 continue;
             }
 
+            neighbor = Get<NeighborTable>().FindNeighbor(peer.GetExtAddress(), Neighbor::kInStateAnyExceptInvalid);
+
+            if (neighbor != nullptr)
+            {
+                aPacket.GetHeader().SetAckMode(Header::kAckRequested);
+                aPacket.GetHeader().SetPacketNumber(neighbor->mTrelTxPacketNumber++);
+                neighbor->mTrelCurrentPendingAcks++;
+            }
+
             otPlatTrelSend(&GetInstance(), aPacket.GetBuffer(), aPacket.GetLength(), &peer.mSockAddr);
+
+            aPacket.GetHeader().SetPacketNumber(originalPacketNumber);
+            aPacket.GetHeader().SetAckMode(originalAckMode);
         }
         break;
 
@@ -136,7 +162,9 @@ Error Interface::Send(const Packet &aPacket, bool aIsDiscovery)
     case Header::kTypeAck:
         peerEntry = Get<PeerTable>().FindMatching(aPacket.GetHeader().GetDestination());
         VerifyOrExit(peerEntry != nullptr, error = kErrorAbort);
-        otPlatTrelSend(&GetInstance(), aPacket.GetBuffer(), aPacket.GetLength(), &peerEntry->mSockAddr);
+        VerifyOrExit(peerEntry->HasValidSockAddr(), error = kErrorAbort);
+        peerEntry->UpdateLastInteractionTime();
+        otPlatTrelSend(&GetInstance(), aPacket.GetBuffer(), aPacket.GetLength(), &peerEntry->GetSockAddr());
         break;
     }
 
@@ -162,7 +190,7 @@ void Interface::HandleReceived(uint8_t *aBuffer, uint16_t aLength, const Ip6::So
 {
     LogDebg("HandleReceived(aLength:%u)", aLength);
 
-    VerifyOrExit(mInitialized && mEnabled && !mFiltered);
+    VerifyOrExit(IsEnabled() && !mFiltered);
 
     mRxPacket.Init(aBuffer, aLength);
     Get<Link>().ProcessReceivedPacket(mRxPacket, aSenderAddr);

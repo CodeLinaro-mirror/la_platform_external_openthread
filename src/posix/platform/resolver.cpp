@@ -143,7 +143,7 @@ void Resolver::LoadDnsServerListFromConf(void)
 
     if (mUpstreamDnsServerCount == 0)
     {
-        LogCrit("No domain name servers found in %s, default to 127.0.0.1", kResolvConfFullPath);
+        LogCrit("No domain name servers found in %s", kResolvConfFullPath);
     }
 
     mUpstreamDnsServerListFreshness = otPlatTimeGet();
@@ -231,8 +231,8 @@ otError Resolver::SendQueryToServer(Transaction        *aTxn,
 {
     otError      error = OT_ERROR_NONE;
     otIp4Address ip4Addr;
-    sockaddr_in  serverAddr4;
-    sockaddr_in6 serverAddr6;
+    sockaddr_in  serverAddr4 = {};
+    sockaddr_in6 serverAddr6 = {};
 
     if (otIp4FromIp4MappedIp6Address(&aServerAddress, &ip4Addr) == OT_ERROR_NONE)
     {
@@ -249,6 +249,11 @@ otError Resolver::SendQueryToServer(Transaction        *aTxn,
         memcpy(&serverAddr6.sin6_addr, &aServerAddress, sizeof(otIp6Address));
         serverAddr6.sin6_family = AF_INET6;
         serverAddr6.sin6_port   = htons(53);
+        if (IsIp6AddressLinkLocal(aServerAddress))
+        {
+            // Network interface index is required for link local destinations
+            serverAddr6.sin6_scope_id = otSysGetInfraNetifIndex();
+        }
 
         VerifyOrExit(sendto(aTxn->mUdpFd6, aPacket, aLength, MSG_DONTWAIT, reinterpret_cast<sockaddr *>(&serverAddr6),
                             sizeof(serverAddr6)) > 0,
@@ -417,42 +422,33 @@ void Resolver::CloseTransaction(Transaction *aTxn)
     aTxn->mThreadTxn = nullptr;
 }
 
-void Resolver::UpdateFdSet(otSysMainloopContext &aContext)
+void Resolver::UpdateFdSet(Mainloop::Context &aContext)
 {
     for (Transaction &txn : mUpstreamTransaction)
     {
         if (txn.mThreadTxn != nullptr)
         {
-            FD_SET(txn.mUdpFd4, &aContext.mReadFdSet);
-            FD_SET(txn.mUdpFd4, &aContext.mErrorFdSet);
-            FD_SET(txn.mUdpFd6, &aContext.mReadFdSet);
-            FD_SET(txn.mUdpFd6, &aContext.mErrorFdSet);
-
-            if (txn.mUdpFd6 > aContext.mMaxFd)
-            {
-                aContext.mMaxFd = txn.mUdpFd6;
-            }
-            if (txn.mUdpFd4 > aContext.mMaxFd)
-            {
-                aContext.mMaxFd = txn.mUdpFd4;
-            }
+            Mainloop::AddToReadFdSet(txn.mUdpFd4, aContext);
+            Mainloop::AddToErrorFdSet(txn.mUdpFd4, aContext);
+            Mainloop::AddToReadFdSet(txn.mUdpFd6, aContext);
+            Mainloop::AddToErrorFdSet(txn.mUdpFd6, aContext);
         }
     }
 }
 
-void Resolver::Process(const otSysMainloopContext &aContext)
+void Resolver::Process(const Mainloop::Context &aContext)
 {
     for (Transaction &txn : mUpstreamTransaction)
     {
         if (txn.mThreadTxn != nullptr)
         {
             // Note: On Linux, we can only get the error via read, so they should share the same logic.
-            if (FD_ISSET(txn.mUdpFd4, &aContext.mErrorFdSet) || FD_ISSET(txn.mUdpFd4, &aContext.mReadFdSet))
+            if (Mainloop::HasFdErrored(txn.mUdpFd4, aContext) || Mainloop::IsFdReadable(txn.mUdpFd4, aContext))
             {
                 ForwardResponse(txn.mThreadTxn, txn.mUdpFd4);
                 CloseTransaction(&txn);
             }
-            else if (FD_ISSET(txn.mUdpFd6, &aContext.mErrorFdSet) || FD_ISSET(txn.mUdpFd6, &aContext.mReadFdSet))
+            else if (Mainloop::HasFdErrored(txn.mUdpFd6, aContext) || Mainloop::IsFdReadable(txn.mUdpFd6, aContext))
             {
                 ForwardResponse(txn.mThreadTxn, txn.mUdpFd6);
                 CloseTransaction(&txn);

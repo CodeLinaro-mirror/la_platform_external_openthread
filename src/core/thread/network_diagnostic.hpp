@@ -38,9 +38,11 @@
 
 #include <openthread/netdiag.h>
 
+#include "common/bit_set.hpp"
 #include "common/callback.hpp"
 #include "common/locator.hpp"
 #include "common/non_copyable.hpp"
+#include "common/numeric_limits.hpp"
 #include "net/udp6.hpp"
 #include "thread/network_diagnostic_tlvs.hpp"
 #include "thread/tmf.hpp"
@@ -196,6 +198,8 @@ private:
     static constexpr uint16_t kMaxChildEntries              = 398;
     static constexpr uint16_t kAnswerMessageLengthThreshold = 800;
 
+    typedef BitSet<NumericLimits<uint8_t>::kMax + 1> TlvTypeBitSet; // A bitset to store TLV types.
+
 #if OPENTHREAD_FTD
     struct AnswerInfo
     {
@@ -233,23 +237,23 @@ private:
 #if OPENTHREAD_MTD
     void SendAnswer(const Ip6::Address &aDestination, const Message &aRequest);
 #elif OPENTHREAD_FTD
-    Error       AllocateAnswer(Coap::Message *&aAnswer, AnswerInfo &aInfo);
-    Error       CheckAnswerLength(Coap::Message *&aAnswer, AnswerInfo &aInfo);
-    bool        IsLastAnswer(const Coap::Message &aAnswer) const;
-    void        FreeAllRelatedAnswers(Coap::Message &aFirstAnswer);
-    void        PrepareAndSendAnswers(const Ip6::Address &aDestination, const Message &aRequest);
-    void        SendNextAnswer(Coap::Message &aAnswer, const Ip6::Address &aDestination);
-    Error       AppendChildTable(Message &aMessage);
-    Error       AppendChildTableAsChildTlvs(Coap::Message *&aAnswer, AnswerInfo &aInfo);
-    Error       AppendRouterNeighborTlvs(Coap::Message *&aAnswer, AnswerInfo &aInfo);
-    Error       AppendChildTableIp6AddressList(Coap::Message *&aAnswer, AnswerInfo &aInfo);
-    Error       AppendChildIp6AddressListTlv(Message &aAnswer, const Child &aChild);
-    Error       AppendEnhancedRoute(Message &aMessage);
+    Error AllocateAnswer(Coap::Message *&aAnswer, AnswerInfo &aInfo);
+    Error CheckAnswerLength(Coap::Message *&aAnswer, AnswerInfo &aInfo);
+    bool  IsLastAnswer(const Coap::Message &aAnswer) const;
+    void  FreeAllRelatedAnswers(Coap::Message &aFirstAnswer);
+    void  PrepareAndSendAnswers(const Ip6::Address &aDestination, const Message &aRequest);
+    void  SendNextAnswer(Coap::Message &aAnswer, const Ip6::Address &aDestination);
+    Error AppendChildTable(Message &aMessage);
+    Error AppendChildTableAsChildTlvs(Coap::Message *&aAnswer, AnswerInfo &aInfo);
+    Error AppendRouterNeighborTlvs(Coap::Message *&aAnswer, AnswerInfo &aInfo);
+    Error AppendChildTableIp6AddressList(Coap::Message *&aAnswer, AnswerInfo &aInfo);
+    Error AppendChildIp6AddressListTlv(Message &aAnswer, const Child &aChild);
+    Error AppendEnhancedRoute(Message &aMessage);
 
 #if OPENTHREAD_CONFIG_BLE_TCAT_ENABLE
-    Error       AppendChildTableAsChildTlvs(Message &aMessage);
-    Error       AppendRouterNeighborTlvs(Message &aMessage);
-    Error       AppendChildTableIp6AddressList(Message &aMessage);
+    Error AppendChildTableAsChildTlvs(Message &aMessage);
+    Error AppendRouterNeighborTlvs(Message &aMessage);
+    Error AppendChildTableIp6AddressList(Message &aMessage);
 #endif
 
     static void HandleAnswerResponse(void                *aContext,
@@ -260,6 +264,10 @@ private:
                                      Coap::Message          *aResponse,
                                      const Ip6::MessageInfo *aMessageInfo,
                                      Error                   aResult);
+#endif
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+    Error AppendBorderRouterIfAddrs(Message &aMessage);
+    Error AppendBrPrefixTlv(uint8_t aTlvType, Message &aMessage);
 #endif
 
     template <Uri kUri> void HandleTmf(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
@@ -353,6 +361,9 @@ public:
     uint16_t GetLastQueryId(void) const { return mQueryId; }
 
 private:
+    typedef otNetworkDiagIp6AddrList Ip6AddrList;
+    typedef otNetworkDiagMacCounters MacCounters;
+
     Error SendCommand(Uri                   aUri,
                       Message::Priority     aPriority,
                       const Ip6::Address   &aDestination,
@@ -368,6 +379,9 @@ private:
     void        HandleGetResponse(Coap::Message *aMessage, const Ip6::MessageInfo *aMessageInfo, Error aResult);
 
     template <Uri kUri> void HandleTmf(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
+
+    static void ParseIp6AddrList(Ip6AddrList &aIp6Addrs, const Message &aMessage, OffsetRange aOffsetRange);
+    static void ParseMacCounters(const MacCountersTlv &aMacCountersTlv, MacCounters &aMacCounters);
 
 #if OT_SHOULD_LOG_AT(OT_LOG_LEVEL_INFO)
     static const char *UriToString(Uri aUri);
