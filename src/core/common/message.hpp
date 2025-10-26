@@ -141,9 +141,6 @@ class HmacSha256;
         }                                                        \
     } while (false)
 
-constexpr uint16_t kNumBuffers = OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS;
-constexpr uint16_t kBufferSize = OPENTHREAD_CONFIG_MESSAGE_BUFFER_SIZE;
-
 class Message;
 class MessagePool;
 class MessageQueue;
@@ -166,6 +163,10 @@ class Buffer : public otMessageBuffer, public LinkedListEntry<Buffer>
     friend class Message;
 
 public:
+    static constexpr uint16_t kSize = OPENTHREAD_CONFIG_MESSAGE_BUFFER_SIZE; ///< Size of buffer in bytes.
+
+    typedef otMessageTxCallback TxCallback; ///< Message TX callback.
+
     /**
      * Returns a pointer to the next message buffer.
      *
@@ -190,6 +191,9 @@ public:
 protected:
     struct Metadata
     {
+#if OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_ENABLE
+        Instance *mInstance;
+#endif
         bool mDirectTx : 1;            // Whether a direct transmission is required.
         bool mLinkSecurity : 1;        // Whether link security is enabled.
         bool mInPriorityQ : 1;         // Whether the message is queued in normal or priority queue.
@@ -227,21 +231,21 @@ protected:
 #if OPENTHREAD_CONFIG_TIME_SYNC_ENABLE
         int64_t mNetworkTimeOffset; // The time offset to the Thread network time, in microseconds.
 #endif
-        TimeMilli    mTimestamp;   // The message timestamp.
-        Message     *mNext;        // Next message in a doubly linked list.
-        Message     *mPrev;        // Previous message in a doubly linked list.
-        MessagePool *mMessagePool; // Message pool for this message.
-        void        *mQueue;       // The queue where message is queued (if any). Queue type from `mInPriorityQ`.
-        RssAverager  mRssAverager; // The averager maintaining the received signal strength (RSS) average.
-        LqiAverager  mLqiAverager; // The averager maintaining the Link quality indicator (LQI) average.
+        TimeMilli   mTimestamp;   // The message timestamp.
+        Message    *mNext;        // Next message in a doubly linked list.
+        Message    *mPrev;        // Previous message in a doubly linked list.
+        TxCallback  mTxCallback;  // The callback to inform message TX success or failure.
+        void       *mTxContext;   // The arbitrary context associated with `mTxCallback`.
+        RssAverager mRssAverager; // The averager maintaining the received signal strength (RSS) average.
+        LqiAverager mLqiAverager; // The averager maintaining the Link quality indicator (LQI) average.
 #if OPENTHREAD_FTD
         ChildMask mChildMask; // ChildMask to indicate which sleepy children need to receive this.
 #endif
     };
 
-    static_assert(kBufferSize > sizeof(Metadata) + sizeof(otMessageBuffer), "Metadata does not fit in a single buffer");
+    static_assert(kSize > sizeof(Metadata) + sizeof(otMessageBuffer), "Metadata does not fit in a single buffer");
 
-    static constexpr uint16_t kBufferDataSize     = kBufferSize - sizeof(otMessageBuffer);
+    static constexpr uint16_t kBufferDataSize     = kSize - sizeof(otMessageBuffer);
     static constexpr uint16_t kHeadBufferDataSize = kBufferDataSize - sizeof(Metadata);
 
     Metadata       &GetMetadata(void) { return mBuffer.mHead.mMetadata; }
@@ -265,7 +269,7 @@ private:
     } mBuffer;
 };
 
-static_assert(sizeof(Buffer) >= kBufferSize,
+static_assert(sizeof(Buffer) >= Buffer::kSize,
               "Buffer size is not valid. Increase OPENTHREAD_CONFIG_MESSAGE_BUFFER_SIZE.");
 
 /**
@@ -320,25 +324,6 @@ public:
     };
 
     static constexpr uint8_t kNumPriorities = 4; ///< Number of priority levels.
-
-    /**
-     * Represents the message ownership model when a `Message` instance is passed to a method/function.
-     */
-    enum Ownership : uint8_t
-    {
-        /**
-         * This value indicates that the method/function receiving a `Message` instance should take custody of the
-         * message (e.g., the method should `Free()` the message if no longer needed).
-         */
-        kTakeCustody,
-
-        /**
-         * This value indicates that the method/function receiving a `Message` instance does not own the message (e.g.,
-         * it should not `Free()` or `Enqueue()` it in a queue). The receiving method/function should create a
-         * copy/clone of the message to keep (if/when needed).
-         */
-        kCopyToUse,
-    };
 
     /**
      * Represents an IPv6 message origin.
@@ -479,7 +464,11 @@ public:
      *
      * @returns A reference to the `Instance`.
      */
-    Instance &GetInstance(void) const;
+#if OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_ENABLE
+    Instance &GetInstance(void) const { return *GetMetadata().mInstance; }
+#else
+    Instance &GetInstance(void) const { return GetSingleInstance(); }
+#endif
 
     /**
      * Frees this message buffer.
@@ -491,7 +480,7 @@ public:
      *
      * @returns A pointer to the next message in the list or `nullptr` if at the end of the list.
      */
-    Message *GetNext(void) const;
+    Message *GetNext(void) const { return Next(); }
 
     /**
      * Returns the number of bytes in the message.
@@ -627,13 +616,15 @@ public:
 
     /**
      * Sets the messages priority.
-     * If the message is already queued in a priority queue, changing the priority ensures to
-     * update the message in the associated queue.
+     *
+     * If the message is already enqueued in a priority queue, the priority cannot be changed and `kErrorInvalidState`
+     * is returned.
      *
      * @param[in]  aPriority  The message priority level.
      *
      * @retval kErrorNone          Successfully set the priority for the message.
      * @retval kErrorInvalidArgs   Priority level is not invalid.
+     * @retval kErrorInvalidState  Message is already queued in a priority queue.
      */
     Error SetPriority(Priority aPriority);
 
@@ -645,6 +636,35 @@ public:
      * @returns A string representation of @p aPriority.
      */
     static const char *PriorityToString(Priority aPriority);
+
+    /**
+     * Registers a callback to be notified of a message's transmission outcome.
+     *
+     * The registered `TxCallback` provides notification of the transmission status of the message from this device to
+     * an immediate neighbor (one hop). It doesn't indicate delivery to the final multi-hop destination.
+     *
+     * For unicast messages, `kErrorNone` callback error signifies successful delivery and MAC acknowledgment for all
+     * fragments of the message to an immediate neighbor, irrespective of whether direct or indirect TX is used. For
+     * multicast messages, `kErrorNone` indicates successful broadcast of all fragments. Note that no MAC-level ack
+     * is expected for broadcast frame transmissions.
+     *
+     * Only one callback can be registered per `Message`. Subsequent calls replace any existing callback. If the
+     * message is never actually sent, the callback will still be invoked when the message is freed, with `kErrorDrop`
+     * as the error.
+     *
+     * @param[in] aCallback   The `TxCallback` function to register with the message.
+     * @param[in] aContext    An arbitrary context that will be passed when @p aCallback is invoked.
+     */
+    void RegisterTxCallback(TxCallback aCallback, void *aContext);
+
+    /**
+     * Invokes the registered `TxCallback` on the `Message` with the given error status.
+     *
+     * The `TxCallback` is a one-time callback, meaning it's automatically cleared once it's invoked.
+     *
+     * @param[in] aError The error to report.
+     */
+    void InvokeTxCallback(Error aError);
 
     /**
      * Prepends bytes to the front of the message.
@@ -911,6 +931,22 @@ public:
      *          FALSE otherwise.
      */
     bool CompareBytes(uint16_t aOffset, const void *aBuf, uint16_t aLength, ByteMatcher aMatcher = nullptr) const;
+
+    /**
+     * Compares the bytes in the message from a given offset range with a given byte array.
+     *
+     * If there are fewer bytes available in the message than @p aOffsetRange, the comparison is treated as failure
+     * (returns FALSE).
+     *
+     * @param[in]  aOffsetRange  The offset range in the message to read from for the comparison.
+     * @param[in]  aBuf       A pointer to a data buffer to compare with the bytes from message.
+     * @param[in]  aMatcher   A `ByteMatcher` function pointer to match the bytes. If `nullptr` then bytes are directly
+     *                        compared.
+     *
+     * @returns TRUE if there are enough bytes available in @p aMessage and they match the bytes from @p aBuf,
+     *          FALSE otherwise.
+     */
+    bool CompareBytes(const OffsetRange &aOffsetRange, const void *aBuf, ByteMatcher aMatcher = nullptr) const;
 
     /**
      * Compares the bytes in the message at a given offset with bytes read from another message.
@@ -1369,26 +1405,6 @@ public:
     void UpdateLinkInfoFrom(const ThreadLinkInfo &aLinkInfo);
 
     /**
-     * Returns a pointer to the message queue (if any) where this message is queued.
-     *
-     * @returns A pointer to the message queue or `nullptr` if not in any message queue.
-     */
-    MessageQueue *GetMessageQueue(void) const
-    {
-        return !GetMetadata().mInPriorityQ ? static_cast<MessageQueue *>(GetMetadata().mQueue) : nullptr;
-    }
-
-    /**
-     * Returns a pointer to the priority message queue (if any) where this message is queued.
-     *
-     * @returns A pointer to the priority queue or `nullptr` if not in any priority queue.
-     */
-    PriorityQueue *GetPriorityQueue(void) const
-    {
-        return GetMetadata().mInPriorityQ ? static_cast<PriorityQueue *>(GetMetadata().mQueue) : nullptr;
-    }
-
-    /**
      * Indicates whether or not the message is also used for time sync purpose.
      *
      * When OPENTHREAD_CONFIG_TIME_SYNC_ENABLE is 0, this method always return false.
@@ -1546,12 +1562,9 @@ private:
         AsConst(this)->GetNextChunk(aLength, static_cast<Chunk &>(aChunk));
     }
 
-    MessagePool *GetMessagePool(void) const { return GetMetadata().mMessagePool; }
-    void         SetMessagePool(MessagePool *aMessagePool) { GetMetadata().mMessagePool = aMessagePool; }
-
-    bool IsInAQueue(void) const { return (GetMetadata().mQueue != nullptr); }
-    void SetMessageQueue(MessageQueue *aMessageQueue);
-    void SetPriorityQueue(PriorityQueue *aPriorityQueue);
+    void MarkAsNotInAQueue(void);
+    bool IsInAQueue(void) const { return (Prev() != this); }
+    bool IsInAPriorityQueue(void) const { return GetMetadata().mInPriorityQ; }
 
     void SetRssAverager(const RssAverager &aRssAverager) { GetMetadata().mRssAverager = aRssAverager; }
     void SetLqiAverager(const LqiAverager &aLqiAverager) { GetMetadata().mLqiAverager = aLqiAverager; }
@@ -1559,6 +1572,7 @@ private:
     Message       *&Next(void) { return GetMetadata().mNext; }
     Message *const &Next(void) const { return GetMetadata().mNext; }
     Message       *&Prev(void) { return GetMetadata().mPrev; }
+    Message *const &Prev(void) const { return GetMetadata().mPrev; }
 
     static Message       *NextOf(Message *aMessage) { return (aMessage != nullptr) ? aMessage->Next() : nullptr; }
     static const Message *NextOf(const Message *aMessage) { return (aMessage != nullptr) ? aMessage->Next() : nullptr; }
@@ -1569,7 +1583,7 @@ private:
 /**
  * Implements a message queue.
  */
-class MessageQueue : public otMessageQueue
+class MessageQueue : public otMessageQueue, public Clearable<MessageQueue>, private NonCopyable
 {
     friend class Message;
     friend class PriorityQueue;
@@ -1590,21 +1604,28 @@ public:
     /**
      * Initializes the message queue.
      */
-    MessageQueue(void) { SetTail(nullptr); }
+    MessageQueue(void) { Clear(); }
+
+#if OPENTHREAD_PLATFORM_NEXUS
+    /**
+     * Destructor of `MessageQueue`.
+     */
+    ~MessageQueue(void) { DequeueAndFreeAll(); }
+#endif
 
     /**
      * Returns a pointer to the first message.
      *
      * @returns A pointer to the first message.
      */
-    Message *GetHead(void) { return Message::NextOf(GetTail()); }
+    Message *GetHead(void) { return static_cast<Message *>(mData); }
 
     /**
      * Returns a pointer to the first message.
      *
      * @returns A pointer to the first message.
      */
-    const Message *GetHead(void) const { return Message::NextOf(GetTail()); }
+    const Message *GetHead(void) const { return static_cast<const Message *>(mData); }
 
     /**
      * Adds a message to the end of the list.
@@ -1670,15 +1691,16 @@ public:
     Message::ConstIterator end(void) const { return Message::ConstIterator(); }
 
 private:
-    Message       *GetTail(void) { return static_cast<Message *>(mData); }
-    const Message *GetTail(void) const { return static_cast<const Message *>(mData); }
-    void           SetTail(Message *aMessage) { mData = aMessage; }
+    void           SetHead(Message *aMessage) { mData = aMessage; }
+    Message       *GetTail(void) { return static_cast<Message *>(mData2); }
+    const Message *GetTail(void) const { return static_cast<const Message *>(mData2); }
+    void           SetTail(Message *aMessage) { mData2 = aMessage; }
 };
 
 /**
  * Implements a priority queue.
  */
-class PriorityQueue : private Clearable<PriorityQueue>
+class PriorityQueue : private Clearable<PriorityQueue>, private NonCopyable
 {
     friend class Message;
     friend class MessageQueue;
@@ -1693,19 +1715,26 @@ public:
      */
     PriorityQueue(void) { Clear(); }
 
+#if OPENTHREAD_PLATFORM_NEXUS
     /**
-     * Returns a pointer to the first message.
-     *
-     * @returns A pointer to the first message.
+     * Destructor of `PriorityQueue`.
      */
-    Message *GetHead(void) { return AsNonConst(AsConst(this)->GetHead()); }
+    ~PriorityQueue(void) { DequeueAndFreeAll(); }
+#endif
 
     /**
      * Returns a pointer to the first message.
      *
      * @returns A pointer to the first message.
      */
-    const Message *GetHead(void) const;
+    Message *GetHead(void) { return mHead; }
+
+    /**
+     * Returns a pointer to the first message.
+     *
+     * @returns A pointer to the first message.
+     */
+    const Message *GetHead(void) const { return mHead; }
 
     /**
      * Returns a pointer to the first message for a given priority level.
@@ -1794,18 +1823,14 @@ public:
     Message::ConstIterator end(void) const { return Message::ConstIterator(); }
 
 private:
-    uint8_t PrevPriority(uint8_t aPriority) const
+    const Message *FindTailForPriorityOrHigher(uint8_t aPriority) const;
+
+    Message *FindTailForPriorityOrHigher(uint8_t aPriority)
     {
-        return (aPriority == Message::kNumPriorities - 1) ? 0 : (aPriority + 1);
+        return AsNonConst(AsConst(this)->FindTailForPriorityOrHigher(aPriority));
     }
 
-    const Message *FindFirstNonNullTail(Message::Priority aStartPriorityLevel) const;
-
-    Message *FindFirstNonNullTail(Message::Priority aStartPriorityLevel)
-    {
-        return AsNonConst(AsConst(this)->FindFirstNonNullTail(aStartPriorityLevel));
-    }
-
+    Message *mHead;
     Message *mTails[Message::kNumPriorities]; // Tail pointers associated with different priority levels.
 };
 
@@ -1891,6 +1916,8 @@ public:
     void ResetMaxUsedBufferCount(void) { mMaxAllocated = mNumAllocated; }
 
 private:
+    static constexpr uint16_t kNumBuffers = OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS;
+
     Buffer *NewBuffer(Message::Priority aPriority);
     void    FreeBuffers(Buffer *aBuffer);
     Error   ReclaimBuffers(Message::Priority aPriority);
@@ -1901,8 +1928,6 @@ private:
     uint16_t mNumAllocated;
     uint16_t mMaxAllocated;
 };
-
-inline Instance &Message::GetInstance(void) const { return GetMessagePool()->GetInstance(); }
 
 /**
  * @}

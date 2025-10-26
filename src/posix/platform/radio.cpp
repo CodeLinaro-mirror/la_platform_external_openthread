@@ -92,10 +92,6 @@ void Radio::Init(const char *aUrl)
     VerifyOrDie(mRadioUrl.GetPath() != nullptr, OT_EXIT_INVALID_ARGUMENTS);
 
     memset(&callbacks, 0, sizeof(callbacks));
-#if OPENTHREAD_CONFIG_DIAG_ENABLE
-    callbacks.mDiagReceiveDone  = otPlatDiagRadioReceiveDone;
-    callbacks.mDiagTransmitDone = otPlatDiagRadioTransmitDone;
-#endif // OPENTHREAD_CONFIG_DIAG_ENABLE
     callbacks.mEnergyScanDone    = otPlatRadioEnergyScanDone;
     callbacks.mBusLatencyChanged = otPlatRadioBusLatencyChanged;
     callbacks.mReceiveDone       = otPlatRadioReceiveDone;
@@ -153,6 +149,21 @@ void Radio::ProcessRadioUrl(const RadioUrl &aRadioUrl)
         SuccessOrDie(aRadioUrl.ParseInt8("cca-threshold", value));
         SuccessOrDie(mRadioSpinel.SetCcaEnergyDetectThreshold(value));
     }
+
+#if OPENTHREAD_POSIX_CONFIG_CONFIGURATION_FILE_ENABLE
+    // config files should be parsed before the region parameter
+    if (aRadioUrl.HasParam("product-config-file"))
+    {
+        const char *configFile = aRadioUrl.GetValue("product-config-file");
+        SuccessOrDie(sConfig.SetProductConfigFile(configFile));
+    }
+
+    if (aRadioUrl.HasParam("factory-config-file"))
+    {
+        const char *configFile = aRadioUrl.GetValue("factory-config-file");
+        SuccessOrDie(sConfig.SetFactoryConfigFile(configFile));
+    }
+#endif // OPENTHREAD_POSIX_CONFIG_CONFIGURATION_FILE_ENABLE
 
     if ((region = aRadioUrl.GetValue("region")) != nullptr)
     {

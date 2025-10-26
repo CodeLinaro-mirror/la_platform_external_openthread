@@ -470,7 +470,7 @@
 #define SPINEL_FRAME_BUFFER_SIZE (SPINEL_FRAME_MAX_SIZE + SPINEL_ENCRYPTER_EXTRA_DATA_SIZE)
 
 /// Macro for generating bit masks using bit index from the spec
-#define SPINEL_BIT_MASK(bit_index, field_bit_count) ((1 << ((field_bit_count)-1)) >> (bit_index))
+#define SPINEL_BIT_MASK(bit_index, field_bit_count) ((1 << ((field_bit_count) - 1)) >> (bit_index))
 
 #define SPINEL_BITS_PER_BYTE 8 // Number of bits in a byte
 
@@ -4911,6 +4911,45 @@ enum
      */
     SPINEL_PROP_BORDER_AGENT_MESHCOP_SERVICE_STATE = SPINEL_PROP_BORDER_AGENT__BEGIN + 1,
 
+    /// Border Agent Ephemeral Key State.
+    /**
+     * Format: `CS` - Get and Unsolicited notifications.
+     *
+     * `C`: The Ephemeral Key state. The value corresponds to `otBorderAgentEphemeralKeyState`.
+     * `S`: The UDP port that is being used by the ephemeral key. If the state is 'Disabled' or 'Stopped' , the port
+     * MUST be 0.
+     */
+    SPINEL_PROP_BORDER_AGENT_EPHEMERAL_KEY_STATE = SPINEL_PROP_BORDER_AGENT__BEGIN + 2,
+
+    /// Enablement/Disablement of the Ephemeral Key feature.
+    /**
+     * Format: `b` - Write-Only
+     *
+     * `b`: true to enable the Ephemeral Key feature and false to disable the feature.
+     *
+     * Note that enabling the Ephemeral Key feature doesn't mean activating Ephemeral Key mode. If the feature
+     * is enabled, the corresponding bit in state bitmap in the meshcop service will be set.
+     */
+    SPINEL_PROP_BORDER_AGENT_EPHEMERAL_KEY_ENABLE = SPINEL_PROP_BORDER_AGENT__BEGIN + 3,
+
+    /// Activation of the Ephemeral Key mode.
+    /**
+     * Format: `ULS` - Write-Only
+     *
+     * `U`: The ephemeral key to use.
+     * `L`: The timeout duration, in milliseconds, to use the ephemeral key.
+     * `S`: The UDP port for the MeshCop-e service. An ephemeral port will be used if this is 0.
+     */
+    SPINEL_PROP_BORDER_AGENT_EPHEMERAL_KEY_ACTIVATE = SPINEL_PROP_BORDER_AGENT__BEGIN + 4,
+
+    /// Deactivation of the Ephemeral Key mode.
+    /**
+     * Format: `b` - Write-Only
+     *
+     * `b`: true to retain the current session if existed. false to force the disconnection for existing session.
+     */
+    SPINEL_PROP_BORDER_AGENT_EPHEMERAL_KEY_DEACTIVATE = SPINEL_PROP_BORDER_AGENT__BEGIN + 5,
+
     SPINEL_PROP_BORDER_AGENT__END = 0x970,
 
     SPINEL_PROP_BACKBONE_ROUTER__BEGIN = 0x970,
@@ -5028,7 +5067,7 @@ typedef uint32_t spinel_prop_key_t;
 #define SPINEL_HEADER_FLAG 0x80
 #define SPINEL_HEADER_FLAGS_SHIFT 6
 #define SPINEL_HEADER_FLAGS_MASK (3 << SPINEL_HEADER_FLAGS_SHIFT)
-#define SPINEL_HEADER_GET_FLAG(x) (((x)&SPINEL_HEADER_FLAGS_MASK) >> SPINEL_HEADER_FLAGS_SHIFT)
+#define SPINEL_HEADER_GET_FLAG(x) (((x) & SPINEL_HEADER_FLAGS_MASK) >> SPINEL_HEADER_FLAGS_SHIFT)
 
 #define SPINEL_HEADER_TID_SHIFT 0
 #define SPINEL_HEADER_TID_MASK (15 << SPINEL_HEADER_TID_SHIFT)
@@ -5045,8 +5084,8 @@ typedef uint32_t spinel_prop_key_t;
 
 #define SPINEL_HEADER_INVALID_IID 0xFF
 
-#define SPINEL_HEADER_GET_IID(x) (((x)&SPINEL_HEADER_IID_MASK) >> SPINEL_HEADER_IID_SHIFT)
-#define SPINEL_HEADER_GET_TID(x) (spinel_tid_t)(((x)&SPINEL_HEADER_TID_MASK) >> SPINEL_HEADER_TID_SHIFT)
+#define SPINEL_HEADER_GET_IID(x) (((x) & SPINEL_HEADER_IID_MASK) >> SPINEL_HEADER_IID_SHIFT)
+#define SPINEL_HEADER_GET_TID(x) (spinel_tid_t)(((x) & SPINEL_HEADER_TID_MASK) >> SPINEL_HEADER_TID_SHIFT)
 
 #define SPINEL_GET_NEXT_TID(x) (spinel_tid_t)((x) >= 0xF ? 1 : (x) + 1)
 

@@ -264,6 +264,7 @@ private:
     void OutputRouteData(uint8_t aIndentSize, const otNetworkDiagRouteData &aRouteData);
     void OutputEnhRoute(uint8_t aIndentSize, const otNetworkDiagEnhRoute &aEnhRoute);
     void OutputLeaderData(uint8_t aIndentSize, const otLeaderData &aLeaderData);
+    void OutputIp6AddrList(uint8_t aIndentSize, const otNetworkDiagIp6AddrList &aIp6Addrs);
     void OutputNetworkDiagMacCounters(uint8_t aIndentSize, const otNetworkDiagMacCounters &aMacCounters);
     void OutputNetworkDiagMleCounters(uint8_t aIndentSize, const otNetworkDiagMleCounters &aMleCounters);
     void OutputChildTableEntry(uint8_t aIndentSize, const otNetworkDiagChildEntry &aChildEntry);
@@ -308,6 +309,16 @@ private:
 
 #if OPENTHREAD_CONFIG_CLI_REGISTER_IP6_RECV_CALLBACK
     static void HandleIp6Receive(otMessage *aMessage, void *aContext);
+#endif
+
+#if OPENTHREAD_CONFIG_P2P_ENABLE
+#if OPENTHREAD_CONFIG_WAKEUP_COORDINATOR_ENABLE
+    static void HandleP2pLinkDone(void *aContext);
+    void        HandleP2pLinkDone(void);
+#endif
+
+    static void HandleP2pUnlinkDone(void *aContext);
+    void        HandleP2pUnlinkDone(void);
 #endif
 
 #if OPENTHREAD_CONFIG_WAKEUP_COORDINATOR_ENABLE

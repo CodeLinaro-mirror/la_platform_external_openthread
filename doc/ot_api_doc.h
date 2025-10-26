@@ -104,6 +104,7 @@
  *
  * @defgroup api-backbone-router      Backbone Router
  * @defgroup api-border-agent         Border Agent
+ * @defgroup api-border-agent-tracker Border Agent Tracker
  * @defgroup api-border-router        Border Router
  * @defgroup api-border-routing       Border Routing Manager
  * @defgroup api-commissioner         Commissioner
@@ -156,6 +157,18 @@
  *
  * @defgroup api-sntp                 SNTP
  * @defgroup api-verhoeff-checksum    Verhoeff Checksum
+ *
+ * @}
+ *
+ * @defgroup api-provisional          Provisional
+ * @brief
+ *   This module includes the OpenThread provisional APIs. These APIs are not stable and users should use them with
+ *   caution.
+ *
+ * @{
+ *
+ * @defgroup api-provisional-link     Link
+ * @defgroup api-provisional-p2p      Peer-to-Peer
  *
  * @}
  *

@@ -4,7 +4,7 @@
  *
  *  Redistribution and use in source and binary forms, with or without
  *  modification, are permitted provided that the following conditions are met:
- *  1. Redistributions of source code must strain the above copyright
+ *  1. Redistributions of source code must retain the above copyright
  *     notice, this list of conditions and the following disclaimer.
  *  2. Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
@@ -65,6 +65,28 @@ public:
         , mPreferredChannelMask(kDefaultChannelMask)
     {
     }
+
+    /**
+     * @brief Sets the path for the factory configuration file.
+     *
+     * @param[in] aFilePath  A null-terminated C string representing the new path to the
+     *                       factory configuration file. This parameter MUST NOT be `nullptr`.
+     *
+     * @retval OT_ERROR_NONE           The factory configuration file path was successfully updated.
+     * @retval OT_ERROR_INVALID_ARGS   If @p aFilePath is `nullptr`.
+     */
+    otError SetFactoryConfigFile(const char *aFilePath);
+
+    /**
+     * @brief Sets the path for the product configuration file.
+     *
+     * @param[in] aFilePath  A null-terminated C string representing the new path to the
+     *                       product configuration file. This parameter MUST NOT be `nullptr`.
+     *
+     * @retval OT_ERROR_NONE           The product configuration file path was successfully updated.
+     * @retval OT_ERROR_INVALID_ARGS   If @p aFilePath is `nullptr`.
+     */
+    otError SetProductConfigFile(const char *aFilePath);
 
     /**
      * Set the region code.
