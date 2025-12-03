@@ -41,6 +41,7 @@
 
 #include <openthread/backbone_router.h>
 #include <openthread/backbone_router_ftd.h>
+#include <openthread/border_agent_tracker.h>
 #include <openthread/border_router.h>
 #include <openthread/channel_manager.h>
 #include <openthread/channel_monitor.h>
@@ -807,6 +808,139 @@ void Interpreter::HandleBorderAgentEphemeralKeyStateChange(void)
 
 #endif // OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE
 
+#if OPENTHREAD_CONFIG_BORDER_AGENT_TRACKER_ENABLE
+
+template <> otError Interpreter::Process<Cmd("batracker")>(Arg aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    /**
+     * @cli batracker (enable, disable)
+     * @code
+     * batracker enable
+     * Done
+     * @endcode
+     * @code
+     * batracker disable
+     * Done
+     * @endcode
+     * @cparam batracker  @ca{enable|disable}
+     * @par api_copy
+     * #otBorderAgentTrackerSetEnabled
+     */
+    if (ProcessEnableDisable(aArgs, otBorderAgentTrackerSetEnabled) == OT_ERROR_NONE)
+    {
+    }
+    /**
+     * @cli batracker state
+     * @code
+     * batracker state
+     * running
+     * Done
+     * @endcode
+     * @par
+     * Shows the state of Border Agent Tracker, `running` or `inactive`.
+     *
+     * The tracker can be enabled by the user (e.g., via `batracker enable`) or by the OpenThread stack itself. The
+     * tracker is considered running if it is enabled by either entity and the underlying DNS-SD (mDNS) is ready.
+     */
+    else if (aArgs[0] == "state")
+    {
+        OutputLine("%s", otBorderAgentTrackerIsRunning(GetInstancePtr()) ? "running" : "inactive");
+    }
+    /**
+     * @cli batracker agents
+     * @code
+     * batracker agents
+     * ServiceName: OTBR-by-Google-be345eefb12f7f9c
+     *     Port: 49152
+     *     Host: otbe345eefb12f7f9c
+     *     TxtData:
+     *         id=4b21d3f4a431725048380698f3073a4b
+     *         rv=31
+     *         nn=4f70656e546872656164
+     *         xp=dead00beef00cafe
+     *         tv=312e342e30
+     *         xa=be345eefb12f7f9c
+     *         sb=00000820
+     *         dn=44656661756c74446f6d61696e
+     *     Address(es):
+     *         fe80:0:0:0:108f:3188:ff96:8e9f
+     *         fd7c:af54:fada:564d:7:fd6e:744c:e300
+     *         fd7c:af54:fada:564d:d9:899d:1217:9e2
+     *     MilliSecondsSinceDiscovered: 5237
+     *     MilliSecondsSinceLastChange: 5237
+     * Done
+     * @endcode
+     * @par
+     * Outputs the list of discovered border agents. Information per agent:
+     * - Service name
+     * - Port number
+     * - Host name
+     * - TXT data (key/value pairs per line)
+     * - Host addresses
+     * - Milliseconds since agent was first discovered
+     * - Milliseconds since the last change to agent info (port, addresses, TXT data)
+     */
+    else if (aArgs[0] == "agents")
+    {
+        otBorderAgentTrackerIterator  iterator;
+        otBorderAgentTrackerAgentInfo agent;
+
+        otBorderAgentTrackerInitIterator(GetInstancePtr(), &iterator);
+
+        while (otBorderAgentTrackerGetNextAgent(GetInstancePtr(), &iterator, &agent) == OT_ERROR_NONE)
+        {
+            OutputLine("ServiceName: %s", agent.mServiceName);
+            OutputLine(kIndentSize, "Port: %u", agent.mPort);
+            OutputLine(kIndentSize, "Host: %s", agent.mHostName != nullptr ? agent.mHostName : "(null)");
+
+            OutputFormat(kIndentSize, "TxtData:");
+
+            if (agent.mTxtData != nullptr)
+            {
+                OutputNewLine();
+                OutputDnsTxtData(kIndentSize * 2, agent.mTxtData, agent.mTxtDataLength);
+            }
+            else
+            {
+                OutputLine(" (null)");
+            }
+
+            OutputFormat(kIndentSize, "Address(es):");
+
+            if (agent.mAddresses != nullptr)
+            {
+                OutputNewLine();
+
+                for (uint16_t i = 0; i < agent.mNumAddresses; i++)
+                {
+                    OutputSpaces(kIndentSize * 2);
+                    OutputIp6AddressLine(agent.mAddresses[i]);
+                }
+            }
+            else
+            {
+                OutputLine(" (null)");
+            }
+
+            OutputFormat(kIndentSize, "MilliSecondsSinceDiscovered: ");
+            OutputUint64Line(agent.mMsecSinceDiscovered);
+
+            OutputFormat(kIndentSize, "MilliSecondsSinceLastChange: ");
+            OutputUint64Line(agent.mMsecSinceLastChange);
+        }
+    }
+    else
+    {
+        error = OT_ERROR_INVALID_ARGS;
+    }
+
+    return error;
+}
+
+#endif // OPENTHREAD_CONFIG_BORDER_AGENT_TRACKER_ENABLE
+
 #if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
 template <> otError Interpreter::Process<Cmd("br")>(Arg aArgs[]) { return mBr.Process(aArgs); }
 #endif
@@ -1034,7 +1168,7 @@ template <> otError Interpreter::Process<Cmd("nat64")>(Arg aArgs[])
         };
         static const uint8_t     kNat64CounterTableHeaderColumns[] = {15, 25, 25};
         static const char *const kNat64CounterTableSubHeader[]     = {
-                "Protocol", "Pkts", "Bytes", "Pkts", "Bytes",
+            "Protocol", "Pkts", "Bytes", "Pkts", "Bytes",
         };
         static const uint8_t kNat64CounterTableSubHeaderColumns[] = {
             15, 10, 14, 10, 14,
@@ -2725,7 +2859,7 @@ template <> otError Interpreter::Process<Cmd("csl")>(Arg aArgs[])
     /**
      * @cli csl timeout
      * @code
-     * cls timeout 10
+     * csl timeout 10
      * Done
      * @endcode
      * @cparam csl timeout @ca{timeout}
@@ -4528,11 +4662,10 @@ template <> otError Interpreter::Process<Cmd("neighbor")>(Arg aArgs[])
         if (isTable)
         {
             static const char *const kNeighborTableTitles[] = {
-                "Role", "RLOC16", "Age", "Avg RSSI", "Last RSSI", "R", "D", "N", "Extended MAC", "Version",
-            };
+                "Role", "RLOC16", "Age", "Avg RSSI", "Last RSSI", "LQ In", "R", "D", "N", "Extended MAC", "Version"};
 
             static const uint8_t kNeighborTableColumnWidths[] = {
-                6, 8, 5, 10, 11, 1, 1, 1, 18, 9,
+                6, 8, 5, 10, 11, 7, 1, 1, 1, 18, 9,
             };
 
             OutputTableHeader(kNeighborTableTitles, kNeighborTableColumnWidths);
@@ -4570,6 +4703,7 @@ template <> otError Interpreter::Process<Cmd("neighbor")>(Arg aArgs[])
                 OutputFormat("| %3lu ", ToUlong(neighborInfo.mAge));
                 OutputFormat("| %8d ", neighborInfo.mAverageRssi);
                 OutputFormat("| %9d ", neighborInfo.mLastRssi);
+                OutputFormat("| %5u ", neighborInfo.mLinkQualityIn);
                 OutputFormat("|%1d", neighborInfo.mRxOnWhenIdle);
                 OutputFormat("|%1d", neighborInfo.mFullThreadDevice);
                 OutputFormat("|%1d", neighborInfo.mFullNetworkData);
@@ -6797,20 +6931,22 @@ exit:
  * The generated output encompasses the following information:
  * - Version
  * - Current state
- * - RLOC16, extended MAC address
- * - Unicast and multicast IPv6 address list
+ * - Uptime and attach time
  * - Channel
- * - PAN ID and extended PAN ID
+ * - PAN IDs, extended MAC address, and RLOC16
+ * - Unicast and multicast IPv6 address list
  * - Network Data
  * - Partition ID
  * - Leader Data
+ * - Buffer info
+ * - Network statistics
+ * - IP, MAC, and MLE counters
  * @par
  * If the device is operating as FTD:
- * - Child and neighbor table
- * - Router table and next hop info
- * - Address cache table
- * - Registered MTD child IPv6 address
- * - Device properties
+ * - Child table, child IP addresses
+ * - Neighbor table (including connection time)
+ * - Router table
+ * - EID cache
  * @par
  * If the device supports and acts as an SRP client:
  * - SRP client state
@@ -6820,48 +6956,97 @@ exit:
  * - SRP server state and address mode
  * - SRP server registered hosts and services
  * @par
- * If the device supports TREL:
- * - TREL status and peer table
- * @par
  * If the device supports and acts as a border router:
  * - BR state
- * - BR prefixes (OMR, on-link, NAT64)
- * - Discovered prefix table
+ * - OMR prefixes
+ * - On-link prefixes
+ * - RDNSS table
+ * - Discovered routers, and peer BRs
+ * - DHCPv6 PD state and OMR prefix
+ * - BR counters
+ * @par
+ * If the device supports TREL:
+ * - TREL status, peer table, and counters
+ * @par
+ * If the device supports NAT64:
+ * - NAT64 state, mappings, and counters
+ * @par
+ * If the device supports History Tracker:
+ * - Network info, neighbor, router, prefix, and route history
  */
 template <> otError Interpreter::Process<Cmd("debug")>(Arg aArgs[])
 {
-    static constexpr uint16_t kMaxDebugCommandSize = 30;
+    static constexpr uint16_t kMaxDebugCommandSize = 50;
 
     static const char *const kDebugCommands[] = {
+        // General device and network state
         "version",
         "state",
-        "rloc16",
-        "extaddr",
-        "ipaddr",
-        "ipmaddr",
+#if OPENTHREAD_CONFIG_UPTIME_ENABLE
+        "uptime",
+#endif
+        "attachtime",
         "channel",
         "panid",
         "extpanid",
+        "ipaddr -v",
+        "ipmaddr",
         "netdata show",
         "netdata show -x",
         "partitionid",
         "leaderdata",
+        "bufferinfo",
+        "netstat",
+
+        // Thread stack info
+        "extaddr",
+        "rloc16",
 #if OPENTHREAD_FTD
         "child table",
         "childip",
-        "neighbor table",
-        "router table",
-        "nexthop",
-        "eidcache",
 #if OPENTHREAD_CONFIG_MLE_DEVICE_PROPERTY_LEADER_WEIGHT_ENABLE
         "deviceprops",
 #endif
-#endif // OPENTHREAD_FTD
+        "eidcache",
+        "neighbor table",
+        "neighbor conntime",
+        "nexthop",
+        "router table",
+#endif
+
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+        // Border Router info
+        "br state",
+        "br omrprefix",
+        "br onlinkprefix",
+        "br prefixtable",
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_MULTI_AIL_DETECTION_ENABLE
+        "br multiail",
+#endif
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_TRACK_PEER_BR_INFO_ENABLE
+        "br peers",
+#endif
+        "br routers",
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_DHCP6_PD_ENABLE
+        "br pd state",
+        "br pd omrprefix",
+#endif
+#endif
+
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
+        // Service info
+        "br rdnsstable",
+#endif
+#if OPENTHREAD_CONFIG_NAT64_TRANSLATOR_ENABLE
+        "nat64 state",
+        "nat64 mappings",
+        "nat64 counters",
+#endif
 #if OPENTHREAD_CONFIG_SRP_CLIENT_ENABLE
         "srp client state",
+        "srp client server",
         "srp client host",
         "srp client service",
-        "srp client server",
 #endif
 #if OPENTHREAD_CONFIG_SRP_SERVER_ENABLE
         "srp server state",
@@ -6869,26 +7054,45 @@ template <> otError Interpreter::Process<Cmd("debug")>(Arg aArgs[])
         "srp server host",
         "srp server service",
 #endif
+
+        // Radio & Link info
+        "ccathreshold",
+#if OPENTHREAD_CONFIG_MAC_CSL_RECEIVER_ENABLE || OPENTHREAD_CONFIG_MAC_CSL_TRANSMITTER_ENABLE
+        "csl",
+        "csl accuracy",
+        "csl uncertainty",
+#endif
+#if OPENTHREAD_CONFIG_PLATFORM_RADIO_COEX_ENABLE
+        "coex metrics",
+#endif
+#if OPENTHREAD_CONFIG_LINK_METRICS_MANAGER_ENABLE
+        "linkmetricsmgr show",
+#endif
+#if OPENTHREAD_CONFIG_MULTI_RADIO
+        "multiradio",
+        "multiradio neighbor list",
+#endif
 #if OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE
         "trel",
         "trel peers",
+        "trel counters",
 #endif
-#if OPENTHREAD_CONFIG_BORDER_ROUTING_ENABLE
-        "br state",
-        "br omrprefix",
-        "br onlinkprefix",
-        "br prefixtable",
-#if OPENTHREAD_CONFIG_NAT64_BORDER_ROUTING_ENABLE
-        "br nat64prefix",
-#endif
-#if OPENTHREAD_CONFIG_BORDER_ROUTING_DHCP6_PD_ENABLE
-        "br pd state",
-        "br pd omrprefix",
-#endif
-#endif
-        "bufferinfo",
-    };
 
+        // Counters & History
+        "counters ip",
+        "counters mac",
+        "counters mle",
+#if OPENTHREAD_CONFIG_IP6_BR_COUNTERS_ENABLE
+        "counters br",
+#endif
+#if OPENTHREAD_CONFIG_HISTORY_TRACKER_ENABLE
+        "history netinfo",
+        "history neighbor",
+        "history router",
+        "history prefix",
+        "history route",
+#endif
+    };
     char commandString[kMaxDebugCommandSize];
 
     OT_UNUSED_VARIABLE(aArgs);
@@ -7660,6 +7864,13 @@ template <> otError Interpreter::Process<Cmd("networkdiagnostic")>(Arg aArgs[])
      * - `34`: MLE Counters TLV
      * - `35`: Vendor App URL TLV
      * - `37`: Enhanced Route TLV
+     * - `38`: Border Router State TLV
+     * - `39`: Border Router Infra Interface Addresses TLV
+     * - `40`: Border Router Local OMR Prefix TLV
+     * - `41`: Border Router DHCPv6-PD OMR Prefix TLV
+     * - `42`: Border Router Local On-link Prefix TLV
+     * - `43`: Border Router Favored On-link Prefix TLV
+     *
      * @par
      * Sends a network diagnostic request to retrieve specified Type Length Values (TLVs)
      * for the specified addresses(es).
@@ -7782,11 +7993,7 @@ void Interpreter::HandleDiagnosticGetResponse(otError                 aError,
             break;
         case OT_NETWORK_DIAGNOSTIC_TLV_IP6_ADDR_LIST:
             OutputLine("IP6 Address List:");
-            for (uint16_t i = 0; i < diagTlv.mData.mIp6AddrList.mCount; ++i)
-            {
-                OutputFormat(kIndentSize, "- ");
-                OutputIp6AddressLine(diagTlv.mData.mIp6AddrList.mList[i]);
-            }
+            OutputIp6AddrList(kIndentSize, diagTlv.mData.mIp6AddrList);
             break;
         case OT_NETWORK_DIAGNOSTIC_TLV_MAC_COUNTERS:
             OutputLine("MAC Counters:");
@@ -7839,6 +8046,29 @@ void Interpreter::HandleDiagnosticGetResponse(otError                 aError,
             break;
         case OT_NETWORK_DIAGNOSTIC_TLV_NON_PREFERRED_CHANNELS:
             OutputLine("Non-preferred Channels Mask: 0x%lx", ToUlong(diagTlv.mData.mNonPreferredChannels));
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_BR_STATE:
+            OutputLine("BR State: %s", BorderRoutingStateToString(diagTlv.mData.mBrState));
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_BR_IF_ADDRS:
+            OutputLine("BR Infra-if IP6 Address List:");
+            OutputIp6AddrList(kIndentSize, diagTlv.mData.mBrIfAddrList);
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_BR_LOCAL_OMR_PREFIX:
+            OutputFormat("BR Local OMR Prefix: ");
+            OutputIp6PrefixLine(diagTlv.mData.mBrPrefix);
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_BR_DHCP6_PD_OMR_PREFIX:
+            OutputFormat("BR DHCPv6-PD OMR Prefix: ");
+            OutputIp6PrefixLine(diagTlv.mData.mBrPrefix);
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_BR_LOCAL_OL_PREFIX:
+            OutputFormat("BR Local On-link Prefix: ");
+            OutputIp6PrefixLine(diagTlv.mData.mBrPrefix);
+            break;
+        case OT_NETWORK_DIAGNOSTIC_TLV_BR_FAVORED_OL_PREFIX:
+            OutputFormat("BR Favored On-link Prefix: ");
+            OutputIp6PrefixLine(diagTlv.mData.mBrPrefix);
             break;
         default:
             break;
@@ -7928,6 +8158,15 @@ void Interpreter::OutputLeaderData(uint8_t aIndentSize, const otLeaderData &aLea
     OutputLine(aIndentSize, "DataVersion: %u", aLeaderData.mDataVersion);
     OutputLine(aIndentSize, "StableDataVersion: %u", aLeaderData.mStableDataVersion);
     OutputLine(aIndentSize, "LeaderRouterId: 0x%02x", aLeaderData.mLeaderRouterId);
+}
+
+void Interpreter::OutputIp6AddrList(uint8_t aIndentSize, const otNetworkDiagIp6AddrList &aIp6Addrs)
+{
+    for (uint8_t i = 0; i < aIp6Addrs.mCount; ++i)
+    {
+        OutputFormat(aIndentSize, "- ");
+        OutputIp6AddressLine(aIp6Addrs.mList[i]);
+    }
 }
 
 void Interpreter::OutputNetworkDiagMacCounters(uint8_t aIndentSize, const otNetworkDiagMacCounters &aMacCounters)
@@ -8087,6 +8326,83 @@ exit:
 }
 
 #endif // OPENTHREAD_CONFIG_VERHOEFF_CHECKSUM_ENABLE
+
+#if OPENTHREAD_CONFIG_P2P_ENABLE
+template <> otError Interpreter::Process<Cmd("p2p")>(Arg aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    if (aArgs[0] == "unlink")
+    {
+        otExtAddress extAddress;
+
+        /**
+         * @cli p2p unlink
+         * @code
+         * p2p unlink dead00beef00cafe
+         * Done
+         * @endcode
+         * @cparam p2p unlink @ca{extended-address}
+         * @par
+         * `OPENTHREAD_CONFIG_P2P_ENABLE` is required.
+         * @par
+         * Tears down the P2P link identified by the extended address.
+         */
+        SuccessOrExit(error = aArgs[1].ParseAsHexString(extAddress.m8));
+        SuccessOrExit(error = otP2pUnlink(GetInstancePtr(), &extAddress, HandleP2pUnlinkDone, this));
+        error = OT_ERROR_PENDING;
+    }
+#if OPENTHREAD_CONFIG_WAKEUP_COORDINATOR_ENABLE
+    else if (aArgs[0] == "link")
+    {
+        otP2pRequest p2pRequest;
+
+        /**
+         * @cli p2p link
+         * @code
+         * p2p link extaddr dead00beef00cafe
+         * Done
+         * @endcode
+         * @cparam p2p link extaddr @ca{extended-address}
+         * @par
+         * `OPENTHREAD_CONFIG_P2P_ENABLE` and `OPENTHREAD_CONFIG_WAKEUP_COORDINATOR_ENABLE` are required.
+         * @par
+         * Wakes up the Wake-up Listener identified by the extended address and establishes a peer-to-peer link with the
+         * peer.
+         */
+        if (aArgs[1] == "extaddr")
+        {
+            SuccessOrExit(error = aArgs[2].ParseAsHexString(p2pRequest.mWakeupRequest.mShared.mExtAddress.m8));
+            p2pRequest.mWakeupRequest.mType = OT_WAKEUP_TYPE_EXT_ADDRESS;
+        }
+        else
+        {
+            ExitNow(error = OT_ERROR_INVALID_ARGS);
+        }
+
+        SuccessOrExit(error = otP2pWakeupAndLink(GetInstancePtr(), &p2pRequest, HandleP2pLinkDone, this));
+        error = OT_ERROR_PENDING;
+    }
+#endif
+    else
+    {
+        error = OT_ERROR_INVALID_ARGS;
+    }
+
+exit:
+    return error;
+}
+
+#if OPENTHREAD_CONFIG_WAKEUP_COORDINATOR_ENABLE
+void Interpreter::HandleP2pLinkDone(void *aContext) { static_cast<Interpreter *>(aContext)->HandleP2pLinkDone(); }
+
+void Interpreter::HandleP2pLinkDone(void) { OutputResult(OT_ERROR_NONE); }
+#endif
+
+void Interpreter::HandleP2pUnlinkDone(void *aContext) { static_cast<Interpreter *>(aContext)->HandleP2pUnlinkDone(); }
+
+void Interpreter::HandleP2pUnlinkDone(void) { OutputResult(OT_ERROR_NONE); }
+#endif //  OPENTHREAD_CONFIG_P2P_ENABLE
 
 #if OPENTHREAD_CONFIG_WAKEUP_COORDINATOR_ENABLE || OPENTHREAD_CONFIG_WAKEUP_END_DEVICE_ENABLE
 template <> otError Interpreter::Process<Cmd("wakeup")>(Arg aArgs[])
@@ -8278,16 +8594,16 @@ void Interpreter::SetCommandTimeout(uint32_t aTimeoutMilli)
 
 otError Interpreter::ProcessCommand(Arg aArgs[])
 {
-#define CmdEntry(aCommandString)                                   \
-    {                                                              \
-        aCommandString, &Interpreter::Process<Cmd(aCommandString)> \
-    }
+#define CmdEntry(aCommandString) {aCommandString, &Interpreter::Process<Cmd(aCommandString)>}
 
     static constexpr Command kCommands[] = {
 #if OPENTHREAD_FTD || OPENTHREAD_MTD
         CmdEntry("attachtime"),
 #if OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE
         CmdEntry("ba"),
+#endif
+#if OPENTHREAD_CONFIG_BORDER_AGENT_TRACKER_ENABLE
+        CmdEntry("batracker"),
 #endif
 #if (OPENTHREAD_CONFIG_THREAD_VERSION >= OT_THREAD_VERSION_1_2)
         CmdEntry("bbr"),
@@ -8439,6 +8755,9 @@ otError Interpreter::ProcessCommand(Arg aArgs[])
 #endif
 #if OPENTHREAD_FTD
         CmdEntry("nexthop"),
+#endif
+#if OPENTHREAD_CONFIG_P2P_ENABLE && OPENTHREAD_CONFIG_WAKEUP_COORDINATOR_ENABLE
+        CmdEntry("p2p"),
 #endif
         CmdEntry("panid"),
         CmdEntry("parent"),

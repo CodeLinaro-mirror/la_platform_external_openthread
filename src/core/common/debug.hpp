@@ -55,7 +55,10 @@
 #define OT_ASSERT(cond)                            \
     do                                             \
     {                                              \
-        if (!(cond))                               \
+        if (cond)                                  \
+        {                                          \
+        }                                          \
+        else                                       \
         {                                          \
             otPlatAssertFail(FILE_NAME, __LINE__); \
             while (1)                              \
@@ -66,6 +69,11 @@
 
 #elif defined(__APPLE__) || defined(__linux__)
 
+#ifdef NDEBUG
+#error \
+    "OPENTHREAD_CONFIG_PLATFORM_ASSERT_MANAGEMENT is not defined, OT_ASSERT requires assert() to work, but NDEBUG is defined!"
+#endif
+
 #include <assert.h>
 
 #define OT_ASSERT(cond) assert(cond)
@@ -75,7 +83,10 @@
 #define OT_ASSERT(cond) \
     do                  \
     {                   \
-        if (!(cond))    \
+        if (cond)       \
+        {               \
+        }               \
+        else            \
         {               \
             while (1)   \
             {           \

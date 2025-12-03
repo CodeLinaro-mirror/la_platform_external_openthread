@@ -23,6 +23,7 @@ Done
 
 - [attachtime](#attachtime)
 - [ba](#ba)
+- [batracker](#batracker-enable)
 - [bbr](#bbr)
 - [br](README_BR.md)
 - [bufferinfo](#bufferinfo)
@@ -73,6 +74,7 @@ Done
 - [log](#log-filename-filename)
 - [mac](#mac-altshortaddr)
 - [macfilter](#macfilter)
+- [mdns](README_MDNS.md)
 - [meshdiag](#meshdiag-topology-ip6-addrs-children)
 - [mliid](#mliid-iid)
 - [mlr](#mlr-reg-ipaddr--timeout)
@@ -88,6 +90,7 @@ Done
 - [networkname](#networkname)
 - [networktime](#networktime)
 - [nexthop](#nexthop)
+- [p2p](#p2p-link-extaddr-extaddr)
 - [panid](#panid)
 - [parent](#parent)
 - [parentpriority](#parentpriority)
@@ -613,6 +616,81 @@ pskcSecureSessionFailure: 0
 pskcCommissionerPetition: 0
 mgmtActiveGet: 0
 mgmtPendingGet: 0
+Done
+```
+
+### batracker enable
+
+Enables Border Agent Tracker.
+
+Requires `OPENTHREAD_CONFIG_BORDER_AGENT_TRACKER_ENABLE`.
+
+When enabled, the tracker browses for the `_meshcop._udp` mDNS service to discover and track Border Agents on the infra-if network.
+
+```bash
+> batracker enable
+Done
+```
+
+### batracker disable
+
+Disables Border Agent Tracker.
+
+Requires `OPENTHREAD_CONFIG_BORDER_AGENT_TRACKER_ENABLE`.
+
+```
+> batracker disable
+Done
+```
+
+### batracker state
+
+Requires `OPENTHREAD_CONFIG_BORDER_AGENT_TRACKER_ENABLE`.
+
+Shows the state of Border Agent Tracker, `running` or `inactive`.
+
+The tracker can be enabled by the user (e.g., via `batracker enable`) or by the OpenThread stack itself. The tracker is considered running if it is enabled by either entity and the underlying DNS-SD (mDNS) is ready.
+
+```bash
+> batracker state
+running
+Done
+```
+
+### batracker agents
+
+Requires `OPENTHREAD_CONFIG_BORDER_AGENT_TRACKER_ENABLE`.
+
+Outputs the list of discovered Border Agents. Information per Agent:
+
+- Service name
+- Port number
+- Host name
+- TXT data (key/value pairs per line)
+- Host addresses
+- Milliseconds since agent was first discovered
+- Milliseconds since the last change to agent info (port, addresses, TXT data)
+
+```bash
+> batracker agents
+ServiceName: OTBR-by-Google-be345eefb12f7f9c
+    Port: 49152
+    Host: otbe345eefb12f7f9c
+    TxtData:
+        id=4b21d3f4a431725048380698f3073a4b
+        rv=31
+        nn=4f70656e546872656164
+        xp=dead00beef00cafe
+        tv=312e342e30
+        xa=be345eefb12f7f9c
+        sb=00000820
+        dn=44656661756c74446f6d61696e
+    Address(es):
+        fe80:0:0:0:108f:3188:ff96:8e9f
+        fd7c:af54:fada:564d:7:fd6e:744c:e300
+        fd7c:af54:fada:564d:d9:899d:1217:9e2
+    MilliSecondsSinceDiscovered: 5237
+    MilliSecondsSinceLastChange: 5237
 Done
 ```
 
@@ -1321,21 +1399,23 @@ The generated output encompasses the following information:
 
 - Version
 - Current state
-- RLOC16, extended MAC address
-- Unicast and multicast IPv6 address list
+- Uptime and attach time
 - Channel
-- PAN ID and extended PAN ID
+- PAN IDs, extended MAC address, and RLOC16
+- Unicast and multicast IPv6 address list
 - Network Data
 - Partition ID
 - Leader Data
+- Buffer info
+- Network statistics
+- IP, MAC, and MLE counters
 
 If the device is operating as FTD:
 
-- Child and neighbor table
-- Router table and next hop Info
-- Address cache table
-- Registered MTD child IPv6 address
-- Device properties
+- Child table, child IP addresses
+- Neighbor table (including connection time)
+- Router table
+- EID cache
 
 If the device supports and acts as an SRP client:
 
@@ -1347,15 +1427,27 @@ If the device supports and acts as an SRP sever:
 - SRP server state and address mode
 - SRP server registered hosts and services
 
-If the device supports TREL:
-
-- TREL status and peer table
-
 If the device supports and acts as a border router:
 
 - BR state
-- BR prefixes (OMR, on-link, NAT64)
-- Discovered prefix table
+- OMR prefixes
+- On-link prefixes
+- RDNSS table
+- Discovered routers, and peer BRs
+- DHCPv6 PD state and OMR prefix
+- BR counters
+
+If the device supports TREL:
+
+- TREL status, peer table, and counters
+
+If the device supports NAT64:
+
+- NAT64 state, mappings, and counters
+
+If the device supports History Tracker:
+
+- Network info, neighbor, router, prefix, and route history
 
 ### delaytimermin
 
@@ -2603,6 +2695,27 @@ rloc16:0x7c00 ext-addr:4ed24fceec9bf6d3 ver:4
 Done
 ```
 
+### meshdiag responsetimeout [\<timeout-msec\>]
+
+Get or set the response timeout value (in milliseconds).
+
+The default response timeout value is specified by `OPENTHREAD_CONFIG_MESH_DIAG_RESPONSE_TIMEOUT` configuration.
+
+Changing the response timeout does not impact any ongoing query. The given timeout value will be clamped to stay between 50 milliseconds and 10 minutes.
+
+```bash
+> responsetimeout
+5000
+Done
+
+> responsetimeout 7000
+Done
+
+> responsetimeout
+7000
+Done
+```
+
 ### mliid \<iid\>
 
 Set the Mesh Local IID.
@@ -2874,11 +2987,10 @@ Print table of neighbors.
 
 ```bash
 > neighbor table
-| Role | RLOC16 | Age | Avg RSSI | Last RSSI |R|D|N| Extended MAC     |
-+------+--------+-----+----------+-----------+-+-+-+------------------+
-|   C  | 0xcc01 |  96 |      -46 |       -46 |1|1|1| 1eb9ba8a6522636b |
-|   R  | 0xc800 |   2 |      -29 |       -29 |1|1|1| 9a91556102c39ddb |
-|   R  | 0xf000 |   3 |      -28 |       -28 |1|1|1| 0ad7ed6beaa6016d |
+| Role | RLOC16 | Age | Avg RSSI | Last RSSI | LQ In |R|D|N| Extended MAC     | Version |
++------+--------+-----+----------+-----------+-------+-+-+-+------------------+---------+
+|   R  | 0x2000 |   4 |      -68 |       -68 |     3 |1|1|1| fa97259e4eb574e4 |       5 |
+|   R  | 0xf000 |   0 |      -96 |       -97 |     1 |1|1|1| ba9fd148fba30fbd |       5 |
 Done
 ```
 
@@ -3097,6 +3209,28 @@ Done
 
 nexthop 0x8001
 0x2000 cost:3
+Done
+```
+
+### p2p link extaddr \<extaddr\>
+
+Wakes up the peer identified by the extended address and establishes a peer-to-peer link with the peer.
+
+`OPENTHREAD_CONFIG_P2P_ENABLE` and `OPENTHREAD_CONFIG_WAKEUP_COORDINATOR_ENABLE` are required.
+
+```bash
+> p2p link extaddr dead00beef00cafe
+Done
+```
+
+### p2p unlink \<extaddress\>
+
+Tears down the P2P link identified by the extended address.
+
+`OPENTHREAD_CONFIG_P2P_ENABLE` is required.
+
+```bash
+> p2p unlink dead00beef00cafe
 Done
 ```
 
@@ -4091,6 +4225,8 @@ Indicate whether TREL radio operation is enabled or not.
 
 `OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE` is required for all `trel` sub-commands.
 
+The TREL operation is enabled if and only if it is enabled by both the user (see `trel enable`) and the OpenThread stack.
+
 ```bash
 > trel
 Enabled
@@ -4100,6 +4236,12 @@ Done
 ### trel enable
 
 Enable TREL operation.
+
+The TREL interface's operational state is determined by two factors: the user's preference (set by this command) and the OpenThread stack's internal state. The TREL interface is enabled only when both the user and the OpenThread stack have it enabled. Otherwise, it is disabled.
+
+Upon OpenThread stack initialization, the user's preference is set to enabled by default. This allows the stack to control the TREL interface state automatically (e.g., enabling it when radio links are enabled and disabling it when radio links are disabled).
+
+If the user explicitly disables the TREL operation using `trel disable`, it will remain disabled until the user explicitly re-enables it using `trel enable`. This ensures the user's 'disable' request persists across other OpenThread stack state changes (which may trigger disabling/enabling of all radio links, including the TREL link).
 
 ```bash
 > trel enable

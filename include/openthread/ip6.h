@@ -35,8 +35,13 @@
 #ifndef OPENTHREAD_IP6_H_
 #define OPENTHREAD_IP6_H_
 
+#include <stdbool.h>
+#include <stdint.h>
+
+#include <openthread/error.h>
+#include <openthread/instance.h>
 #include <openthread/message.h>
-#include <openthread/platform/radio.h>
+#include <openthread/platform/toolchain.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -550,6 +555,16 @@ const uint16_t *otIp6GetUnsecurePorts(otInstance *aInstance, uint8_t *aNumEntrie
  * @retval FALSE  The two IPv6 addresses are not the same.
  */
 bool otIp6IsAddressEqual(const otIp6Address *aFirst, const otIp6Address *aSecond);
+
+/**
+ * Test whether or not the IPv6 address is a link-local unicast address.
+ *
+ * @param[in]  aAddress   A pointer to the IPv6 address to test.
+ *
+ * @retval TRUE   If the IPv6 address is a link-local unicast address.
+ * @retval FALSE  If the IPv6 address is not a link-local unicast address.
+ */
+bool otIp6IsLinkLocalUnicast(const otIp6Address *aAddress);
 
 /**
  * Test if two IPv6 prefixes are the same.
