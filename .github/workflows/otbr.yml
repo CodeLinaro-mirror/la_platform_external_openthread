@@ -65,7 +65,7 @@ jobs:
     steps:
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
-        submodules: recursive
+        submodules: true
     - name: Build OTBR Docker
       env:
         PR_BODY: "${{ github.event.pull_request.body }}"
@@ -178,8 +178,6 @@ jobs:
       MAX_JOBS: 3
     steps:
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      with:
-        submodules: recursive
     - name: Set firewall environment variables
       if: ${{ matrix.use_core_firewall }}
       run: |
@@ -239,7 +237,7 @@ jobs:
     steps:
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
-        submodules: recursive
+        submodules: true
     - name: Bootstrap
       run: |
         sudo apt-get --no-install-recommends install -y lcov
