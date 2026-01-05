@@ -31,8 +31,8 @@
  *   This file includes definitions for managing MeshCoP Datasets.
  */
 
-#ifndef MESHCOP_DATASET_MANAGER_HPP_
-#define MESHCOP_DATASET_MANAGER_HPP_
+#ifndef OT_CORE_MESHCOP_DATASET_MANAGER_HPP_
+#define OT_CORE_MESHCOP_DATASET_MANAGER_HPP_
 
 #include "openthread-core-config.h"
 
@@ -442,7 +442,28 @@ public:
      * Starts the Leader functions for maintaining the Active Operational Dataset.
      */
     void StartLeader(void);
-#endif
+
+    /**
+     * Gets the minimal delay timer.
+     *
+     * @retval the minimal delay timer (in ms).
+     */
+    uint32_t GetDelayTimerMinimal(void) const { return mDelayTimerMinimal; }
+
+    /**
+     * Sets the minimal delay timer value.
+     *
+     * This method is reserved for testing and demo purposes only. Changing this will render a production application
+     * non-compliant with the Thread Specification.
+     *
+     * @param[in]  aDelayTimerMinimal The value of minimal delay timer (in ms).
+     *
+     * @retval  kErrorNone         Successfully set the minimal delay timer.
+     * @retval  kErrorInvalidArgs  If @p aDelayTimerMinimal is not valid. It is zero or it is larger than or equal to
+     *                             the default minimum value of `DelayTimerTlv::kMinDelay`.
+     */
+    Error SetDelayTimerMinimal(uint32_t aDelayTimerMinimal);
+#endif // OPENTHREAD_FTD
 
 private:
 #if OPENTHREAD_FTD
@@ -461,6 +482,9 @@ private:
     using DelayTimer = TimerMilliIn<PendingDatasetManager, &PendingDatasetManager::HandleDelayTimer>;
 
     DelayTimer mDelayTimer;
+#if OPENTHREAD_FTD
+    uint32_t mDelayTimerMinimal;
+#endif
 };
 
 DeclareTmfHandler(PendingDatasetManager, kUriPendingGet);
@@ -471,4 +495,4 @@ DeclareTmfHandler(PendingDatasetManager, kUriPendingSet);
 } // namespace MeshCoP
 } // namespace ot
 
-#endif // MESHCOP_DATASET_MANAGER_HPP_
+#endif // OT_CORE_MESHCOP_DATASET_MANAGER_HPP_

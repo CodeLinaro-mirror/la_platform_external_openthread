@@ -31,8 +31,8 @@
  *   This file includes definitions for MLE types and constants.
  */
 
-#ifndef MLE_TYPES_HPP_
-#define MLE_TYPES_HPP_
+#ifndef OT_CORE_THREAD_MLE_TYPES_HPP_
+#define OT_CORE_THREAD_MLE_TYPES_HPP_
 
 #include "openthread-core-config.h"
 
@@ -128,6 +128,15 @@ enum DeviceRole : uint8_t
     kRoleChild    = OT_DEVICE_ROLE_CHILD,    ///< The Thread Child role.
     kRoleRouter   = OT_DEVICE_ROLE_ROUTER,   ///< The Thread Router role.
     kRoleLeader   = OT_DEVICE_ROLE_LEADER,   ///< The Thread Leader role.
+};
+
+/**
+ * Represents a status value in an MLE Status TLV.
+ */
+enum Status : uint8_t
+{
+    kStatusSuccess = 0, ///< Success status.
+    kStatusError   = 1, ///< Error status.
 };
 
 /**
@@ -876,4 +885,4 @@ DefineCoreType(otP2pRequest, Mle::P2pRequest);
 
 } // namespace ot
 
-#endif // MLE_TYPES_HPP_
+#endif // OT_CORE_THREAD_MLE_TYPES_HPP_
