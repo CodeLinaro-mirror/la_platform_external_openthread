@@ -443,12 +443,16 @@ ba sessions
 Done
 ```
 
-### ba disconnect
+### ba evictcommissioner
 
-Disconnects border agent from any active secure sessions.
+Forcefully evicts the current active Thread Commissioner.
+
+Requires `OPENTHREAD_CONFIG_BORDER_AGENT_COMMISSIONER_EVICTION_API_ENABLE`.
+
+This command is intended as an administrator tool to address a misbehaving or stale commissioner session that may be connected through a different Border Agent. It provides a mechanism to clear the single Active Commissioner role within the Thread network, allowing a new candidate to be selected as the Active commissioner.
 
 ```bash
-> ba disconnect
+> ba evictcommissioner
 Done
 ```
 

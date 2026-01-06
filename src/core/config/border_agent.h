@@ -31,8 +31,8 @@
  *   This file includes compile-time configurations for Border Agent.
  */
 
-#ifndef CONFIG_BORDER_AGENT_H_
-#define CONFIG_BORDER_AGENT_H_
+#ifndef OT_CORE_CONFIG_BORDER_AGENT_H_
+#define OT_CORE_CONFIG_BORDER_AGENT_H_
 
 /**
  * @addtogroup config-border-agent
@@ -123,6 +123,18 @@
 #endif
 
 /**
+ * @def OPENTHREAD_CONFIG_BORDER_AGENT_COMMISSIONER_EVICTION_API_ENABLE
+ *
+ * Define to 1 to enable the `otBorderAgentEvictActiveCommissioner()` API.
+ *
+ * This API provides a mechanism to evict the active Thread Commissioner from the network. This is primarily intended
+ * for administrative use to handle misbehaving or stale commissioner sessions.
+ */
+#ifndef OPENTHREAD_CONFIG_BORDER_AGENT_COMMISSIONER_EVICTION_API_ENABLE
+#define OPENTHREAD_CONFIG_BORDER_AGENT_COMMISSIONER_EVICTION_API_ENABLE 0
+#endif
+
+/**
  * @def OPENTHREAD_CONFIG_BORDER_AGENT_TRACKER_ENABLE
  *
  * Define to 1 to enable the Border Agent Tracker feature.
@@ -135,7 +147,16 @@
 #endif
 
 /**
+ * @def OPENTHREAD_CONFIG_BORDER_AGENT_TXT_DATA_PARSER_ENABLE
+ *
+ * Define to 1 to enable the Border Agent TXT Data Parser feature.
+ */
+#ifndef OPENTHREAD_CONFIG_BORDER_AGENT_TXT_DATA_PARSER_ENABLE
+#define OPENTHREAD_CONFIG_BORDER_AGENT_TXT_DATA_PARSER_ENABLE 0
+#endif
+
+/**
  * @}
  */
 
-#endif // CONFIG_BORDER_AGENT_H_
+#endif // OT_CORE_CONFIG_BORDER_AGENT_H_

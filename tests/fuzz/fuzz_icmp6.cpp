@@ -54,26 +54,12 @@ public:
         mSize -= aLength;
     }
 
-    otError ConsumeRemainingBytes(otMessage *aMessage)
+    uint8_t *ConsumeRemainingBytes(void)
     {
-        otError error;
-
-        SuccessOrExit(error = otMessageAppend(aMessage, mData, static_cast<uint16_t>(mSize)));
+        uint8_t *buf = static_cast<uint8_t *>(malloc(mSize));
+        memcpy(buf, mData, mSize);
         mSize = 0;
-
-    exit:
-        return error;
-    }
-
-    bool ConsumeBool(void)
-    {
-        assert(mSize > 0);
-
-        uint8_t result;
-
-        ConsumeData(&result, sizeof(result));
-
-        return result & 1;
+        return buf;
     }
 
     size_t RemainingBytes(void) { return mSize; }
@@ -89,16 +75,18 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     FuzzDataProvider fdp(data, size);
 
-    unsigned int      seed;
-    otMessage        *message;
-    otMessageSettings settings;
+    unsigned int seed;
+    uint32_t     ifIndex;
+    otIp6Address srcAddress;
+    uint8_t     *buffer;
+    uint16_t     bufferLength;
 
-    if (size < sizeof(seed) + sizeof(settings.mLinkSecurityEnabled) + sizeof(settings.mPriority))
+    if (size < sizeof(seed) + sizeof(ifIndex) + sizeof(srcAddress))
     {
         return 0;
     }
 
-    if (size > sizeof(seed) + sizeof(settings.mLinkSecurityEnabled) + sizeof(settings.mPriority) + kMaxMessageSize)
+    if (size > sizeof(seed) + sizeof(ifIndex) + sizeof(srcAddress) + kMaxMessageSize)
     {
         return 0;
     }
@@ -112,8 +100,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     node.GetInstance().SetLogLevel(kLogLevelInfo);
 
-    node.GetInstance().Get<BorderRouter::RoutingManager>().Init(/* aInfraIfIndex */ 1, /* aInfraIfIsRunning */ true);
-    node.GetInstance().Get<BorderRouter::RoutingManager>().SetEnabled(true);
+    node.GetInstance().Get<BorderRouter::InfraIf>().Init(/* aInfraIfIndex */ 1, /* aInfraIfIsRunning */ true);
+    SuccessOrQuit(node.GetInstance().Get<BorderRouter::RoutingManager>().SetEnabled(true));
     node.GetInstance().Get<Srp::Server>().SetAutoEnableMode(true);
     node.GetInstance().Get<BorderRouter::RoutingManager>().SetDhcp6PdEnabled(true);
     node.GetInstance().Get<BorderRouter::RoutingManager>().SetNat64PrefixManagerEnabled(true);
@@ -130,20 +118,20 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     Log("---------------------------------------------------------------------------------------");
     Log("Fuzz");
 
-    memset(&settings, 0, sizeof(settings));
-    settings.mLinkSecurityEnabled = fdp.ConsumeBool();
-    fdp.ConsumeData(&settings.mPriority, sizeof(settings.mPriority));
+    fdp.ConsumeData(&ifIndex, sizeof(ifIndex));
+    fdp.ConsumeData(&srcAddress, sizeof(srcAddress));
+    bufferLength = fdp.RemainingBytes();
+    buffer       = fdp.ConsumeRemainingBytes();
 
-    message = otIp6NewMessage(&node.GetInstance(), &settings);
-    VerifyOrExit(message != nullptr);
-
-    SuccessOrQuit(fdp.ConsumeRemainingBytes(message));
-
-    otIp6Send(&node.GetInstance(), message);
+    otPlatInfraIfRecvIcmp6Nd(&node.GetInstance(), ifIndex, &srcAddress, buffer, bufferLength);
 
     nexus.AdvanceTime(10 * 1000);
 
-exit:
+    if (buffer)
+    {
+        free(buffer);
+    }
+
     return 0;
 }
 
