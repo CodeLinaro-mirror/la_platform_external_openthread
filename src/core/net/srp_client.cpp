@@ -1088,8 +1088,15 @@ exit:
         }
         else
         {
+            uint16_t retryJitter;
+
             LogRetryWaitInterval();
-            mTimer.Start(Random::NonCrypto::AddJitter(GetRetryWaitInterval(), kRetryIntervalJitter));
+
+            // Use a divisor of current retry interval for jitter
+            retryJitter = ClampToUint16(GetRetryWaitInterval() / kRetryJitterDivisor);
+            retryJitter = Max(retryJitter, kRetryIntervalJitter);
+            mTimer.Start(Random::NonCrypto::AddJitter(GetRetryWaitInterval(), retryJitter));
+
             GrowRetryWaitInterval();
             InvokeCallback(error);
         }
@@ -2058,7 +2065,7 @@ void Client::UpdateState(void)
 
         mHostInfo.SetState(kToRefresh);
 
-        // Fall through
+        OT_FALL_THROUGH;
 
     case kToAdd:
     case kToRefresh:
@@ -2068,7 +2075,7 @@ void Client::UpdateState(void)
         // for empty service list.
         VerifyOrExit(!mServices.IsEmpty() && (mHostInfo.IsAutoAddressEnabled() || (mHostInfo.GetNumAddresses() > 0)));
 
-        // Fall through
+        OT_FALL_THROUGH;
 
     case kToRemove:
         shouldUpdate = true;
