@@ -31,8 +31,8 @@
  *   This file includes definitions for managing Thread Network Data.
  */
 
-#ifndef NETWORK_DATA_HPP_
-#define NETWORK_DATA_HPP_
+#ifndef OT_CORE_THREAD_NETWORK_DATA_HPP_
+#define OT_CORE_THREAD_NETWORK_DATA_HPP_
 
 #include "openthread-core-config.h"
 
@@ -158,6 +158,18 @@ public:
      * @returns A pointer to the start of the TLVs.
      */
     const uint8_t *GetBytes(void) const { return mTlvs; }
+
+    /**
+     * Parses and validates all TLVs contained within the Network Data.
+     *
+     * Performs the following checks on all TLVs in the Network Data.
+     *  - Ensures correct TLV format and expected minimum length for known TLV types that can appear in Network Data.
+     *  - Validates sub-TLVs included in the known TLVs.
+     *
+     * @retval kErrorNone   Successfully validated all the TLVs in the Network Data.
+     * @retval kErrorParse  Network Data TLVs are not well-formed.
+     */
+    Error ValidateTlvs(void) const;
 
     /**
      * Provides full or stable copy of the Thread Network Data.
@@ -690,4 +702,4 @@ private:
 
 } // namespace ot
 
-#endif // NETWORK_DATA_HPP_
+#endif // OT_CORE_THREAD_NETWORK_DATA_HPP_

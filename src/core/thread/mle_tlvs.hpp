@@ -31,8 +31,8 @@
  *   This file includes definitions for generating and processing MLE TLVs.
  */
 
-#ifndef MLE_TLVS_HPP_
-#define MLE_TLVS_HPP_
+#ifndef OT_CORE_THREAD_MLE_TLVS_HPP_
+#define OT_CORE_THREAD_MLE_TLVS_HPP_
 
 #include "openthread-core-config.h"
 
@@ -188,6 +188,11 @@ typedef TlvInfo<Tlv::kTlvRequest> TlvRequestTlv;
  * Defines Link Margin TLV constants and types.
  */
 typedef UintTlvInfo<Tlv::kLinkMargin, uint8_t> LinkMarginTlv;
+
+/**
+ * Defines Status TLV constants and types.
+ */
+typedef UintTlvInfo<Tlv::kStatus, uint8_t> StatusTlv;
 
 /**
  * Defines Version TLV constants and types.
@@ -882,20 +887,6 @@ private:
 } OT_TOOL_PACKED_END;
 
 /**
- * Specifies Status TLV status values.
- */
-struct StatusTlv : public UintTlvInfo<Tlv::kStatus, uint8_t>
-{
-    /**
-     * Status values.
-     */
-    enum Status : uint8_t
-    {
-        kError = 1, ///< Error.
-    };
-};
-
-/**
  * Provides constants and methods for generation and parsing of Address Registration TLV.
  */
 class AddressRegistrationTlv : public TlvInfo<Tlv::kAddressRegistration>
@@ -1169,4 +1160,4 @@ private:
 
 } // namespace ot
 
-#endif // MLE_TLVS_HPP_
+#endif // OT_CORE_THREAD_MLE_TLVS_HPP_

@@ -31,8 +31,8 @@
  *   This file contains definitions for the CLI interpreter.
  */
 
-#ifndef CLI_HPP_
-#define CLI_HPP_
+#ifndef OT_CLI_CLI_HPP_
+#define OT_CLI_CLI_HPP_
 
 #include "openthread-core-config.h"
 
@@ -56,6 +56,7 @@
 #include <openthread/thread_ftd.h>
 #include <openthread/udp.h>
 
+#include "cli/cli_ba.hpp"
 #include "cli/cli_bbr.hpp"
 #include "cli/cli_br.hpp"
 #include "cli/cli_coap.hpp"
@@ -106,11 +107,13 @@ extern "C" void otCliOutputFormat(const char *aFmt, ...);
 class Interpreter : public OutputImplementer, public Utils
 {
 #if OPENTHREAD_FTD || OPENTHREAD_MTD
+    friend class Ba;
     friend class Br;
     friend class Bbr;
     friend class Commissioner;
     friend class Dns;
     friend class Joiner;
+    friend class History;
     friend class LinkMetrics;
     friend class Mdns;
     friend class MeshDiag;
@@ -291,14 +294,6 @@ private:
     void HandleSntpResponse(uint64_t aTime, otError aResult);
 #endif
 
-#if OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE
-    void OutputBorderAgentCounters(const otBorderAgentCounters &aCounters);
-#if OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE
-    static void HandleBorderAgentEphemeralKeyStateChange(void *aContext);
-    void        HandleBorderAgentEphemeralKeyStateChange(void);
-#endif
-#endif
-
     static void HandleDetachGracefullyResult(void *aContext);
     void        HandleDetachGracefullyResult(void);
 
@@ -372,6 +367,10 @@ private:
     Mdns mMdns;
 #endif
 
+#if OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE
+    Ba mBa;
+#endif
+
 #if (OPENTHREAD_CONFIG_THREAD_VERSION >= OT_THREAD_VERSION_1_2)
     Bbr mBbr;
 #endif
@@ -433,4 +432,4 @@ private:
 } // namespace Cli
 } // namespace ot
 
-#endif // CLI_HPP_
+#endif // OT_CLI_CLI_HPP_

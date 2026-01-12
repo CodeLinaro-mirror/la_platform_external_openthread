@@ -31,8 +31,8 @@
  *  This file defines OpenThread String class.
  */
 
-#ifndef STRING_HPP_
-#define STRING_HPP_
+#ifndef OT_CORE_COMMON_STRING_HPP_
+#define OT_CORE_COMMON_STRING_HPP_
 
 #include "openthread-core-config.h"
 
@@ -375,7 +375,25 @@ inline constexpr bool AreStringsInOrder(const char *aFirst, const char *aSecond)
 {
     return (*aFirst < *aSecond)
                ? true
-               : ((*aFirst > *aSecond) || (*aFirst == '\0') ? false : AreStringsInOrder(aFirst + 1, aSecond + 1));
+               : ((*aFirst > *aSecond) || (*aFirst == kNullChar) ? false : AreStringsInOrder(aFirst + 1, aSecond + 1));
+}
+
+/**
+ * This `constexpr` function checks whether two given C strings are equal.
+ *
+ * This is intended for use from `static_assert`, e.g., checking if a lookup table entries are correct. It is not
+ * recommended to use this function in other situations as it uses recursion so that it can be `constexpr`.
+ *
+ * @param[in] aFirst    The first string.
+ * @param[in] aSecond   The second string.
+ *
+ * @retval TRUE  If @p aFirst is equal to @p aSecond.
+ * @retval FALSE If @p aFirst is not equal to @p aSecond.
+ */
+inline constexpr bool AreConstStringsEqual(const char *aFirst, const char *aSecond)
+{
+    return (*aFirst == *aSecond) ? (*aFirst == kNullChar ? true : AreConstStringsEqual(aFirst + 1, aSecond + 1))
+                                 : false;
 }
 
 /**
@@ -443,7 +461,7 @@ public:
      *
      * @returns The string writer.
      */
-    StringWriter &AppendVarArgs(const char *aFormat, va_list aArgs);
+    StringWriter &AppendVarArgs(const char *aFormat, va_list aArgs) OT_TOOL_PRINTF_STYLE_FORMAT_ARG_CHECK(2, 0);
 
     /**
      * Appends an array of bytes in hex representation (using "%02x" style) to the buffer.
@@ -564,4 +582,4 @@ public:
 
 } // namespace ot
 
-#endif // STRING_HPP_
+#endif // OT_CORE_COMMON_STRING_HPP_

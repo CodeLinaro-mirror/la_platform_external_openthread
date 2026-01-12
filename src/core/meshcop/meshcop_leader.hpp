@@ -31,8 +31,8 @@
  *   This file includes definitions for a MeshCoP Leader.
  */
 
-#ifndef MESHCOP_LEADER_HPP_
-#define MESHCOP_LEADER_HPP_
+#ifndef OT_CORE_MESHCOP_MESHCOP_LEADER_HPP_
+#define OT_CORE_MESHCOP_MESHCOP_LEADER_HPP_
 
 #include "openthread-core-config.h"
 
@@ -76,29 +76,12 @@ public:
     void SendDatasetChanged(const Ip6::Address &aAddress);
 
     /**
-     * Sets minimal delay timer.
-     *
-     * @param[in]  aDelayTimerMinimal The value of minimal delay timer (in ms).
-     *
-     * @retval  kErrorNone         Successfully set the minimal delay timer.
-     * @retval  kErrorInvalidArgs  If @p aDelayTimerMinimal is not valid.
-     */
-    Error SetDelayTimerMinimal(uint32_t aDelayTimerMinimal);
-
-    /**
-     * Gets minimal delay timer.
-     *
-     * @retval the minimal delay timer (in ms).
-     */
-    uint32_t GetDelayTimerMinimal(void) const { return mDelayTimerMinimal; }
-
-    /**
      * Sets empty Commissioner Data TLV in the Thread Network Data.
      */
     void SetEmptyCommissionerData(void);
 
 private:
-    static constexpr uint32_t kTimeoutLeaderPetition = 50; // TIMEOUT_LEAD_PET (seconds)
+    static constexpr uint32_t kLeaderPetitionTimeout = 50 * Time::kOneSecondInMsec; // TIMEOUT_LEAD_PET (in msec)
 
     OT_TOOL_PACKED_BEGIN
     class CommissioningData
@@ -131,10 +114,7 @@ private:
 
     using LeaderTimer = TimerMilliIn<Leader, &Leader::HandleTimer>;
 
-    LeaderTimer mTimer;
-
-    uint32_t mDelayTimerMinimal;
-
+    LeaderTimer                   mTimer;
     CommissionerIdTlv::StringType mCommissionerId;
     uint16_t                      mSessionId;
 };
@@ -147,4 +127,4 @@ DeclareTmfHandler(Leader, kUriLeaderKeepAlive);
 
 #endif // OPENTHREAD_FTD
 
-#endif // MESHCOP_LEADER_HPP_
+#endif // OT_CORE_MESHCOP_MESHCOP_LEADER_HPP_
