@@ -31,8 +31,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <openthread/cli.h>
-
 #include "platform/nexus_core.hpp"
 #include "platform/nexus_node.hpp"
 
@@ -58,11 +56,24 @@ public:
 
     uint8_t *ConsumeRemainingBytes(void)
     {
-        uint8_t *buf = static_cast<uint8_t *>(malloc(mSize + 1));
+        uint8_t *buf = static_cast<uint8_t *>(malloc(mSize));
         memcpy(buf, mData, mSize);
-        buf[mSize] = '\0';
-        mSize      = 0;
+        mSize = 0;
         return buf;
+    }
+
+    uint8_t ConsumeIntegralInRange(uint8_t aMin, uint8_t aMax)
+    {
+        assert(aMin < aMax);
+
+        uint16_t range = aMax - aMin;
+        uint8_t  result;
+
+        ConsumeData(&result, sizeof(result));
+
+        result = result % (range + 1);
+
+        return result + aMin;
     }
 
     size_t RemainingBytes(void) { return mSize; }
@@ -72,30 +83,20 @@ private:
     size_t         mSize;
 };
 
-static int CliOutput(void *aContext, const char *aFormat, va_list aArguments)
-{
-    OT_UNUSED_VARIABLE(aContext);
-    OT_UNUSED_VARIABLE(aFormat);
-    OT_UNUSED_VARIABLE(aArguments);
-
-    return vsnprintf(nullptr, 0, aFormat, aArguments);
-}
-
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
-    const uint16_t kMaxCommandSize = 4096;
-
     FuzzDataProvider fdp(data, size);
 
     unsigned int seed;
-    uint8_t     *buffer;
+    otRadioFrame frame;
+    otError      error;
 
-    if (size < sizeof(seed))
+    if (size < sizeof(seed) + sizeof(error) + sizeof(frame))
     {
         return 0;
     }
 
-    if (size > kMaxCommandSize)
+    if (size > sizeof(seed) + sizeof(error) + sizeof(frame) + OT_RADIO_FRAME_MAX_SIZE)
     {
         return 0;
     }
@@ -109,10 +110,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     node.GetInstance().SetLogLevel(kLogLevelInfo);
 
-    otCliInit(&node.GetInstance(), CliOutput, nullptr);
-
-    node.GetInstance().Get<BorderRouter::RoutingManager>().Init(/* aInfraIfIndex */ 1, /* aInfraIfIsRunning */ true);
-    node.GetInstance().Get<BorderRouter::RoutingManager>().SetEnabled(true);
+    node.GetInstance().Get<BorderRouter::InfraIf>().Init(/* aInfraIfIndex */ 1, /* aInfraIfIsRunning */ true);
+    SuccessOrQuit(node.GetInstance().Get<BorderRouter::RoutingManager>().SetEnabled(true));
     node.GetInstance().Get<Srp::Server>().SetAutoEnableMode(true);
     node.GetInstance().Get<BorderRouter::RoutingManager>().SetDhcp6PdEnabled(true);
     node.GetInstance().Get<BorderRouter::RoutingManager>().SetNat64PrefixManagerEnabled(true);
@@ -129,14 +128,31 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     Log("---------------------------------------------------------------------------------------");
     Log("Fuzz");
 
-    buffer = fdp.ConsumeRemainingBytes();
+    error = static_cast<otError>(fdp.ConsumeIntegralInRange(OT_ERROR_NONE, OT_NUM_ERRORS - 1));
 
-    otCliInputLine(reinterpret_cast<char *>(buffer));
+    fdp.ConsumeData(&frame, sizeof(frame));
 
-    nexus.AdvanceTime(60 * 1000);
+    frame.mLength = fdp.RemainingBytes();
 
-    free(buffer);
+    if (frame.mLength == 0)
+    {
+        frame.mPsdu = NULL;
+    }
+    else
+    {
+        frame.mPsdu = fdp.ConsumeRemainingBytes();
+    }
 
+    otPlatRadioReceiveDone(&node.GetInstance(), &frame, error);
+
+    nexus.AdvanceTime(10 * 1000);
+
+    if (frame.mPsdu)
+    {
+        free(frame.mPsdu);
+    }
+
+exit:
     return 0;
 }
 

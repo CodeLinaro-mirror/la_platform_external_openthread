@@ -31,8 +31,8 @@
  *   This file includes definitions for managing the Network Name.
  */
 
-#ifndef MESHCOP_NETWORK_NAME_HPP_
-#define MESHCOP_NETWORK_NAME_HPP_
+#ifndef OT_CORE_MESHCOP_NETWORK_NAME_HPP_
+#define OT_CORE_MESHCOP_NETWORK_NAME_HPP_
 
 #include "openthread-core-config.h"
 
@@ -111,7 +111,7 @@ public:
     /**
      * Initializes the Network Name as an empty string.
      */
-    NetworkName(void) { m8[0] = '\0'; }
+    NetworkName(void) { m8[0] = kNullChar; }
 
     /**
      * Gets the Network Name as a null terminated C string.
@@ -263,4 +263,4 @@ DefineCoreType(otNetworkName, MeshCoP::NetworkName);
 
 } // namespace ot
 
-#endif // MESHCOP_EXTENDED_PANID_HPP_
+#endif // OT_CORE_MESHCOP_NETWORK_NAME_HPP_

@@ -31,8 +31,8 @@
  *   This file includes definitions for handle network diagnostic.
  */
 
-#ifndef NETWORK_DIAGNOSTIC_HPP_
-#define NETWORK_DIAGNOSTIC_HPP_
+#ifndef OT_CORE_THREAD_NETWORK_DIAGNOSTIC_HPP_
+#define OT_CORE_THREAD_NETWORK_DIAGNOSTIC_HPP_
 
 #include "openthread-core-config.h"
 
@@ -372,11 +372,7 @@ private:
                       Coap::ResponseHandler aHandler = nullptr,
                       void                 *aContext = nullptr);
 
-    static void HandleGetResponse(void                *aContext,
-                                  otMessage           *aMessage,
-                                  const otMessageInfo *aMessageInfo,
-                                  otError              aResult);
-    void        HandleGetResponse(Coap::Message *aMessage, const Ip6::MessageInfo *aMessageInfo, Error aResult);
+    DeclareTmfResponseHandlerFullParamIn(Client, HandleGetResponse);
 
     template <Uri kUri> void HandleTmf(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
 
@@ -402,4 +398,4 @@ DeclareTmfHandler(Client, kUriDiagnosticReset);
 
 } // namespace ot
 
-#endif // NETWORK_DIAGNOSTIC_HPP_
+#endif // OT_CORE_THREAD_NETWORK_DIAGNOSTIC_HPP_

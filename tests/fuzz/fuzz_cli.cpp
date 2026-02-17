@@ -31,6 +31,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <openthread/cli.h>
+
 #include "platform/nexus_core.hpp"
 #include "platform/nexus_node.hpp"
 
@@ -56,9 +58,10 @@ public:
 
     uint8_t *ConsumeRemainingBytes(void)
     {
-        uint8_t *buf = static_cast<uint8_t *>(malloc(mSize));
+        uint8_t *buf = static_cast<uint8_t *>(malloc(mSize + 1));
         memcpy(buf, mData, mSize);
-        mSize = 0;
+        buf[mSize] = '\0';
+        mSize      = 0;
         return buf;
     }
 
@@ -69,24 +72,30 @@ private:
     size_t         mSize;
 };
 
+static int CliOutput(void *aContext, const char *aFormat, va_list aArguments)
+{
+    OT_UNUSED_VARIABLE(aContext);
+    OT_UNUSED_VARIABLE(aFormat);
+    OT_UNUSED_VARIABLE(aArguments);
+
+    return vsnprintf(nullptr, 0, aFormat, aArguments);
+}
+
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
-    const uint16_t kMaxMessageSize = 2048;
+    const uint16_t kMaxCommandSize = 4096;
 
     FuzzDataProvider fdp(data, size);
 
     unsigned int seed;
-    uint32_t     ifIndex;
-    otIp6Address srcAddress;
     uint8_t     *buffer;
-    uint16_t     bufferLength;
 
-    if (size < sizeof(seed) + sizeof(ifIndex) + sizeof(srcAddress))
+    if (size < sizeof(seed))
     {
         return 0;
     }
 
-    if (size > sizeof(seed) + sizeof(ifIndex) + sizeof(srcAddress) + kMaxMessageSize)
+    if (size > kMaxCommandSize)
     {
         return 0;
     }
@@ -100,8 +109,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     node.GetInstance().SetLogLevel(kLogLevelInfo);
 
-    node.GetInstance().Get<BorderRouter::RoutingManager>().Init(/* aInfraIfIndex */ 1, /* aInfraIfIsRunning */ true);
-    node.GetInstance().Get<BorderRouter::RoutingManager>().SetEnabled(true);
+    otCliInit(&node.GetInstance(), CliOutput, nullptr);
+
+    node.GetInstance().Get<BorderRouter::InfraIf>().Init(/* aInfraIfIndex */ 1, /* aInfraIfIsRunning */ true);
+    SuccessOrQuit(node.GetInstance().Get<BorderRouter::RoutingManager>().SetEnabled(true));
     node.GetInstance().Get<Srp::Server>().SetAutoEnableMode(true);
     node.GetInstance().Get<BorderRouter::RoutingManager>().SetDhcp6PdEnabled(true);
     node.GetInstance().Get<BorderRouter::RoutingManager>().SetNat64PrefixManagerEnabled(true);
@@ -118,19 +129,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     Log("---------------------------------------------------------------------------------------");
     Log("Fuzz");
 
-    fdp.ConsumeData(&ifIndex, sizeof(ifIndex));
-    fdp.ConsumeData(&srcAddress, sizeof(srcAddress));
-    bufferLength = fdp.RemainingBytes();
-    buffer       = fdp.ConsumeRemainingBytes();
+    buffer = fdp.ConsumeRemainingBytes();
 
-    otPlatInfraIfRecvIcmp6Nd(&node.GetInstance(), ifIndex, &srcAddress, buffer, bufferLength);
+    otCliInputLine(reinterpret_cast<char *>(buffer));
 
-    nexus.AdvanceTime(10 * 1000);
+    nexus.AdvanceTime(60 * 1000);
 
-    if (buffer)
-    {
-        free(buffer);
-    }
+    free(buffer);
 
     return 0;
 }

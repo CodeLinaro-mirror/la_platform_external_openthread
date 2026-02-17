@@ -38,6 +38,7 @@ namespace Nexus {
 
 using ActiveDatasetManager = MeshCoP::ActiveDatasetManager;
 using Manager              = MeshCoP::BorderAgent::Manager;
+using BaTxtData            = MeshCoP::BorderAgent::TxtData;
 using EphemeralKeyManager  = MeshCoP::BorderAgent::EphemeralKeyManager;
 using EpskcEvent           = HistoryTracker::EpskcEvent;
 using Iterator             = HistoryTracker::Iterator;
@@ -754,6 +755,75 @@ void TestBorderAgentEphemeralKey(void)
                  kErrorInvalidArgs);
     VerifyOrQuit(node0.Get<Manager>().GetCounters().mEpskcActivations == 6);
     VerifyOrQuit(node0.Get<Manager>().GetCounters().mEpskcInvalidArgsErrors == 2);
+}
+
+void TestBorderAgentEphemeralKeyTapGeneration(void)
+{
+    static constexpr uint16_t kMaxRounds = 20;
+
+    using Tap = EphemeralKeyManager::Tap;
+
+    Core    nexus;
+    Node   &node = nexus.CreateNode();
+    Tap     tap;
+    uint8_t index;
+
+    Log("------------------------------------------------------------------------------------------------------");
+    Log("TestBorderAgentEphemeralKeyTapGeneration");
+
+    nexus.AdvanceTime(0);
+
+    node.Form();
+    nexus.AdvanceTime(50 * Time::kOneSecondInMsec);
+    VerifyOrQuit(node.Get<Mle::Mle>().IsLeader());
+
+    for (uint16_t round = 0; round < kMaxRounds; round++)
+    {
+        SuccessOrQuit(tap.GenerateRandom());
+        SuccessOrQuit(tap.Validate());
+        Log("Generated random TAP: %s", tap.mTap);
+
+        // Tamper with one of the digits and ensure checksum fails.
+
+        index = round % Tap::kLength;
+
+        tap.mTap[index]++;
+
+        if (tap.mTap[index] > '9')
+        {
+            tap.mTap[index] = '0';
+        }
+
+        VerifyOrQuit(tap.Validate() == kErrorFailed);
+    }
+
+    // CHeck valid TAP strings (Thread spec (1.4.1d3) - section  8.4.9.7)
+
+    SuccessOrQuit(StringCopy(tap.mTap, "903723159"));
+    SuccessOrQuit(tap.Validate());
+
+    SuccessOrQuit(StringCopy(tap.mTap, "746351983"));
+    SuccessOrQuit(tap.Validate());
+
+    // Check invalid TAP strings.
+
+    SuccessOrQuit(StringCopy(tap.mTap, ""));
+    VerifyOrQuit(tap.Validate() == kErrorInvalidArgs);
+
+    SuccessOrQuit(StringCopy(tap.mTap, "1234"));
+    VerifyOrQuit(tap.Validate() == kErrorInvalidArgs);
+
+    SuccessOrQuit(StringCopy(tap.mTap, "12345678"));
+    VerifyOrQuit(tap.Validate() == kErrorInvalidArgs);
+
+    SuccessOrQuit(StringCopy(tap.mTap, "123456789"));
+    VerifyOrQuit(tap.Validate() == kErrorFailed);
+
+    SuccessOrQuit(StringCopy(tap.mTap, "a23456789"));
+    VerifyOrQuit(tap.Validate() == kErrorInvalidArgs);
+
+    SuccessOrQuit(StringCopy(tap.mTap, "12345678A"));
+    VerifyOrQuit(tap.Validate() == kErrorInvalidArgs);
 }
 
 EpskcEvent GetNewestEpskcEvent(Node &aNode)
@@ -1592,61 +1662,114 @@ void ValidateMeshCoPTxtData(TxtData &aTxtData, Node &aNode)
     static constexpr uint32_t kFlagEpskcSupported           = 1 << 11;
 
     MeshCoP::BorderAgent::Id id;
+    BaTxtData::Info          info;
+    const Mac::ExtAddress   &extAddress = aNode.Get<Mac::Mac>().GetExtAddress();
     uint32_t                 stateBitmap;
     uint32_t                 threadIfStatus;
     uint32_t                 threadRole;
+    bool                     baIsRunning;
 
     aTxtData.ValidateFormat();
     aTxtData.LogAllTxtEntries();
 
+    SuccessOrQuit(info.ParseFrom(aTxtData.mData, aTxtData.mLength));
+
     aNode.Get<Manager>().GetId(id);
     aTxtData.ValidateKey("id", id);
+    VerifyOrQuit(info.mHasAgentId);
+    VerifyOrQuit(id == AsCoreType(&info.mAgentId));
+
     aTxtData.ValidateKey("rv", "1");
+    VerifyOrQuit(info.mHasRecordVersion);
+    VerifyOrQuit(StringMatch(info.mRecordVersion, "1"));
+
     aTxtData.ValidateKey("tv", kThreadVersionString);
-    aTxtData.ValidateKey("xa", aNode.Get<Mac::Mac>().GetExtAddress());
+    VerifyOrQuit(info.mHasThreadVersion);
+    VerifyOrQuit(StringMatch(info.mThreadVersion, kThreadVersionString));
+
+    aTxtData.ValidateKey("xa", extAddress);
+    VerifyOrQuit(info.mHasExtAddress);
+    VerifyOrQuit(AsCoreType(&info.mExtAddress) == extAddress);
 
     if (aNode.Get<MeshCoP::ActiveDatasetManager>().IsComplete())
     {
-        aTxtData.ValidateKey("nn", aNode.Get<NetworkNameManager>().GetNetworkName().GetAsCString());
-        aTxtData.ValidateKey("xp", aNode.Get<ExtendedPanIdManager>().GetExtPanId());
+        const char                   *networkName = aNode.Get<NetworkNameManager>().GetNetworkName().GetAsCString();
+        const MeshCoP::ExtendedPanId &extPanId    = aNode.Get<ExtendedPanIdManager>().GetExtPanId();
+
+        aTxtData.ValidateKey("nn", networkName);
+        VerifyOrQuit(info.mHasNetworkName);
+        VerifyOrQuit(StringMatch(info.mNetworkName.m8, networkName));
+
+        aTxtData.ValidateKey("xp", extPanId);
+        VerifyOrQuit(info.mHasExtendedPanId);
+        VerifyOrQuit(AsCoreType(&info.mExtendedPanId) == extPanId);
     }
 
     if (aNode.Get<Mle::Mle>().IsAttached())
     {
-        aTxtData.ValidateKey("pt", BigEndian::HostSwap32(aNode.Get<Mle::Mle>().GetLeaderData().GetPartitionId()));
-        aTxtData.ValidateKey("at", aNode.Get<ActiveDatasetManager>().GetTimestamp());
+        uint32_t                  partitionId = aNode.Get<Mle::Mle>().GetLeaderData().GetPartitionId();
+        const MeshCoP::Timestamp &timestamp   = aNode.Get<ActiveDatasetManager>().GetTimestamp();
+        MeshCoP::Timestamp::Info  timestampInfo;
+
+        aTxtData.ValidateKey("pt", BigEndian::HostSwap32(partitionId));
+        VerifyOrQuit(info.mHasPartitionId);
+        VerifyOrQuit(info.mPartitionId == partitionId);
+
+        aTxtData.ValidateKey("at", timestamp);
+        timestamp.ConvertTo(timestampInfo);
+        VerifyOrQuit(info.mHasActiveTimestamp);
+        VerifyOrQuit(info.mActiveTimestamp.mSeconds == timestampInfo.mSeconds);
+        VerifyOrQuit(info.mActiveTimestamp.mTicks == timestampInfo.mTicks);
+        VerifyOrQuit(info.mActiveTimestamp.mAuthoritative == timestampInfo.mAuthoritative);
     }
     else
     {
         VerifyOrQuit(!aTxtData.ContainsKey("pt"));
+        VerifyOrQuit(!info.mHasPartitionId);
+
         VerifyOrQuit(!aTxtData.ContainsKey("at"));
+        VerifyOrQuit(!info.mHasActiveTimestamp);
     }
 
     stateBitmap = aTxtData.ReadUint32Key("sb");
+    VerifyOrQuit(info.mHasStateBitmap);
 
-    VerifyOrQuit((stateBitmap & kMaskConnectionMode) == aNode.Get<Manager>().IsRunning() ? kConnectionModePskc
-                                                                                         : kConnectionModeDisabled);
+    baIsRunning = aNode.Get<Manager>().IsRunning();
+    VerifyOrQuit((stateBitmap & kMaskConnectionMode) == (baIsRunning ? kConnectionModePskc : kConnectionModeDisabled));
+    VerifyOrQuit(info.mStateBitmap.mConnMode ==
+                 (baIsRunning ? BaTxtData::kConnModePskc : BaTxtData::kConnModeDisabled));
+
     switch (aNode.Get<Mle::Mle>().GetRole())
     {
     case Mle::DeviceRole::kRoleDisabled:
         threadIfStatus = kThreadIfStatusNotInitialized;
         threadRole     = kThreadRoleDisabledOrDetached;
+        VerifyOrQuit(info.mStateBitmap.mThreadIfState == BaTxtData::kThreadIfNotInit);
+        VerifyOrQuit(info.mStateBitmap.mThreadRole == BaTxtData::kRoleDisabledDetached);
         break;
     case Mle::DeviceRole::kRoleDetached:
         threadIfStatus = kThreadIfStatusInitialized;
         threadRole     = kThreadRoleDisabledOrDetached;
+        VerifyOrQuit(info.mStateBitmap.mThreadIfState == BaTxtData::kThreadIfInit);
+        VerifyOrQuit(info.mStateBitmap.mThreadRole == BaTxtData::kRoleDisabledDetached);
         break;
     case Mle::DeviceRole::kRoleChild:
         threadIfStatus = kThreadIfStatusActive;
         threadRole     = kThreadRoleChild;
+        VerifyOrQuit(info.mStateBitmap.mThreadIfState == BaTxtData::kThreadIfActive);
+        VerifyOrQuit(info.mStateBitmap.mThreadRole == BaTxtData::kRoleChild);
         break;
     case Mle::DeviceRole::kRoleRouter:
         threadIfStatus = kThreadIfStatusActive;
         threadRole     = kThreadRoleRouter;
+        VerifyOrQuit(info.mStateBitmap.mThreadIfState == BaTxtData::kThreadIfActive);
+        VerifyOrQuit(info.mStateBitmap.mThreadRole == BaTxtData::kRoleRouter);
         break;
     case Mle::DeviceRole::kRoleLeader:
         threadIfStatus = kThreadIfStatusActive;
         threadRole     = kThreadRoleLeader;
+        VerifyOrQuit(info.mStateBitmap.mThreadIfState == BaTxtData::kThreadIfActive);
+        VerifyOrQuit(info.mStateBitmap.mThreadRole == BaTxtData::kRoleLeader);
         break;
     }
 
@@ -1656,10 +1779,12 @@ void ValidateMeshCoPTxtData(TxtData &aTxtData, Node &aNode)
     if (aNode.Get<EphemeralKeyManager>().GetState() != EphemeralKeyManager::kStateDisabled)
     {
         VerifyOrQuit(stateBitmap & kFlagEpskcSupported);
+        VerifyOrQuit(info.mStateBitmap.mEpskcSupported);
     }
     else
     {
         VerifyOrQuit(!(stateBitmap & kFlagEpskcSupported));
+        VerifyOrQuit(!info.mStateBitmap.mEpskcSupported);
     }
 }
 
@@ -1674,10 +1799,10 @@ void HandleServiceChanged(void *aContext) // Callback used in `TestBorderAgentTx
 
 void ReadAndValidateMeshCoPTxtData(Node &aNode)
 {
-    Manager::ServiceTxtData serviceTxtData;
-    TxtData                 txtData;
+    BaTxtData::ServiceTxtData serviceTxtData;
+    TxtData                   txtData;
 
-    SuccessOrQuit(aNode.Get<Manager>().PrepareServiceTxtData(serviceTxtData));
+    SuccessOrQuit(aNode.Get<BaTxtData>().Prepare(serviceTxtData));
     txtData.Init(serviceTxtData.mData, serviceTxtData.mLength);
 
     ValidateMeshCoPTxtData(txtData, aNode);
@@ -1698,7 +1823,7 @@ void TestBorderAgentTxtDataCallback(void)
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     // Set MeshCoP service change callback. Will get initial values.
     Log("Set MeshCoP service change callback and check initial values");
-    node0.Get<Manager>().SetServiceChangedCallback(HandleServiceChanged, &callbackInvoked);
+    node0.Get<BaTxtData>().SetChangedCallback(HandleServiceChanged, &callbackInvoked);
     nexus.AdvanceTime(1);
 
     // Check the initial TXT entries
@@ -2199,7 +2324,7 @@ void TestBorderAgentServiceRegistration(void)
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     Log("Set vendor TXT data and validate that it is included in the registered mDNS service");
 
-    node0.Get<Manager>().SetVendorTxtData(kVendorTxtData, sizeof(kVendorTxtData));
+    node0.Get<BaTxtData>().SetVendorData(kVendorTxtData, sizeof(kVendorTxtData));
     nexus.AdvanceTime(5 * Time::kOneSecondInMsec);
 
     iterator = node0.Get<Dns::Multicast::Core>().AllocateIterator();
@@ -2237,7 +2362,7 @@ void TestBorderAgentServiceRegistration(void)
     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     Log("Clear vendor TXT data and validate that the registered mDNS service is updated accordingly");
 
-    node0.Get<Manager>().SetVendorTxtData(nullptr, 0);
+    node0.Get<BaTxtData>().SetVendorData(nullptr, 0);
     nexus.AdvanceTime(5 * Time::kOneSecondInMsec);
 
     iterator = node0.Get<Dns::Multicast::Core>().AllocateIterator();
@@ -2274,6 +2399,7 @@ int main(void)
 {
     ot::Nexus::TestBorderAgent();
     ot::Nexus::TestBorderAgentEphemeralKey();
+    ot::Nexus::TestBorderAgentEphemeralKeyTapGeneration();
     ot::Nexus::TestHistoryTrackerBorderAgentEpskcEvent();
     ot::Nexus::TestBorderAgentTxtDataCallback();
     ot::Nexus::TestBorderAgentServiceRegistration();
