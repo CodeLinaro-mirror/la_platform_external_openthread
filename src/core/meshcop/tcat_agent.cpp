@@ -48,11 +48,8 @@ RegisterLogModule("TcatAgent");
 
 bool TcatAgent::VendorInfo::IsValid(void) const
 {
-    return (mProvisioningUrl == nullptr ||
-            (IsValidUtf8String(mProvisioningUrl) &&
-             (static_cast<uint8_t>(StringLength(mProvisioningUrl, kProvisioningUrlMaxLength)) <
-              kProvisioningUrlMaxLength))) &&
-           mPskdString != nullptr;
+    // Note: mProvisioningUrl can be nullptr, if not present
+    return mPskdString != nullptr && Tlv::ValidateStringValue<ProvisioningUrlTlv>(mProvisioningUrl) == kErrorNone;
 }
 
 TcatAgent::TcatAgent(Instance &aInstance)
@@ -286,9 +283,9 @@ uint8_t TcatAgent::CheckAuthorizationRequirements(CommandClassFlags aFlagsRequir
                 if (mCommissionerHasDomainName)
                 {
 #if (OPENTHREAD_CONFIG_THREAD_VERSION >= OT_THREAD_VERSION_1_4)
-                    if (Get<MeshCoP::NetworkNameManager>().GetDomainName() == mCommissionerDomainName)
+                    if (Get<MeshCoP::NetworkIdentity>().GetDomainName() == mCommissionerDomainName)
 #else
-                    if (StringMatch(mCommissionerDomainName.GetAsCString(), NetworkName::kDomainNameInit))
+                    if (StringMatch(mCommissionerDomainName.GetAsCString(), NetworkIdentity::kDefaultDomainName))
 #endif
                     {
                         res |= flag;
@@ -759,7 +756,7 @@ exit:
 Error TcatAgent::HandleGetNetworkName(Message &aOutgoingMessage, bool &aResponse)
 {
     Error             error    = kErrorNone;
-    MeshCoP::NameData nameData = Get<MeshCoP::NetworkNameManager>().GetNetworkName().GetAsData();
+    MeshCoP::NameData nameData = Get<MeshCoP::NetworkIdentity>().GetNetworkName().GetAsData();
 
     VerifyOrExit(Get<ActiveDatasetManager>().IsCommissioned(), error = kErrorNotFound);
 #if !OPENTHREAD_CONFIG_ALLOW_EMPTY_NETWORK_NAME
@@ -812,7 +809,7 @@ Error TcatAgent::HandleGetExtPanId(Message &aOutgoingMessage, bool &aResponse)
     VerifyOrExit(Get<ActiveDatasetManager>().IsCommissioned(), error = kErrorNotFound);
 
     SuccessOrExit(error = Tlv::AppendTlv(aOutgoingMessage, kTlvResponseWithPayload,
-                                         &Get<MeshCoP::ExtendedPanIdManager>().GetExtPanId(), sizeof(ExtendedPanId)));
+                                         &Get<MeshCoP::NetworkIdentity>().GetExtPanId(), sizeof(ExtendedPanId)));
     aResponse = true;
 
 exit:
@@ -825,10 +822,10 @@ Error TcatAgent::HandleGetProvisioningUrl(Message &aOutgoingMessage, bool &aResp
     uint16_t length;
 
     VerifyOrExit(mVendorInfo != nullptr, error = kErrorInvalidState);
-    VerifyOrExit(mVendorInfo->mProvisioningUrl != nullptr, error = kErrorInvalidState);
+    VerifyOrExit(mVendorInfo->mProvisioningUrl != nullptr, error = kErrorNotImplemented);
 
     length = StringLength(mVendorInfo->mProvisioningUrl, kProvisioningUrlMaxLength);
-    VerifyOrExit(length > 0 && length <= Tlv::kBaseTlvMaxLength, error = kErrorNotFound);
+    VerifyOrExit(length > 0, error = kErrorNotImplemented);
 
     SuccessOrExit(error =
                       Tlv::AppendTlv(aOutgoingMessage, kTlvResponseWithPayload, mVendorInfo->mProvisioningUrl, length));
@@ -979,10 +976,8 @@ exit:
 
 Error TcatAgent::HandleGetApplicationLayers(Message &aOutgoingMessage, bool &aResponse)
 {
-    Error   error = kErrorNone;
-    ot::Tlv tlv;
-    uint8_t replyLen = 0;
-    uint8_t count    = 0;
+    Error         error = kErrorNone;
+    Tlv::Bookmark tlvBookmark;
 
     static_assert((kApplicationLayerMaxCount * (kServiceNameMaxLength + 2)) <= 250,
                   "Unsupported TCAT application layers configuration");
@@ -990,23 +985,17 @@ Error TcatAgent::HandleGetApplicationLayers(Message &aOutgoingMessage, bool &aRe
     VerifyOrExit(mVendorInfo != nullptr, error = kErrorInvalidState);
     VerifyOrExit(IsCommandClassAuthorized(kApplication), error = kErrorRejected);
 
+    SuccessOrExit(error = Tlv::StartTlv(aOutgoingMessage, kTlvResponseWithPayload, tlvBookmark));
+
     for (uint8_t i = 0; i < kApplicationLayerMaxCount && mVendorInfo->mApplicationServiceName[i] != nullptr; i++)
-    {
-        replyLen += sizeof(tlv);
-        replyLen += StringLength(mVendorInfo->mApplicationServiceName[i], kServiceNameMaxLength);
-        count++;
-    }
-
-    tlv.SetType(kTlvResponseWithPayload);
-    tlv.SetLength(replyLen);
-    SuccessOrExit(error = aOutgoingMessage.Append(tlv));
-
-    for (uint8_t i = 0; i < count; i++)
     {
         uint16_t length = StringLength(mVendorInfo->mApplicationServiceName[i], kServiceNameMaxLength);
         uint8_t  type   = mVendorInfo->mApplicationServiceIsTcp[i] ? kTlvServiceNameTcp : kTlvServiceNameUdp;
+
         SuccessOrExit(error = Tlv::AppendTlv(aOutgoingMessage, type, mVendorInfo->mApplicationServiceName[i], length));
     }
+
+    SuccessOrExit(error = Tlv::EndTlv(aOutgoingMessage, tlvBookmark));
 
     aResponse = true;
 
@@ -1119,7 +1108,7 @@ void TcatAgent::NotifyStateChange(void)
                                                    mState == kStateConnected);
 }
 
-template <> void TcatAgent::HandleTmf<kUriTcatEnable>(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo)
+template <> void TcatAgent::HandleTmf<kUriTcatEnable>(Coap::Msg &aMsg)
 {
     Error          error        = kErrorNone;
     Coap::Message *message      = nullptr;
@@ -1127,13 +1116,14 @@ template <> void TcatAgent::HandleTmf<kUriTcatEnable>(Coap::Message &aMessage, c
     uint16_t       durationSec  = 0;
     uint32_t       durationMs;
 
-    VerifyOrExit(aMessage.IsConfirmablePostRequest());
-    LogInfo("Received %s from %s", UriToString<kUriTcatEnable>(), aMessageInfo.GetPeerAddr().ToString().AsCString());
-    message = Get<Tmf::Agent>().NewResponseMessage(aMessage);
+    VerifyOrExit(aMsg.IsConfirmablePostRequest());
+    LogInfo("Received %s from %s", UriToString<kUriTcatEnable>(),
+            aMsg.mMessageInfo.GetPeerAddr().ToString().AsCString());
+    message = Get<Tmf::Agent>().NewResponseMessage(aMsg.mMessage);
     VerifyOrExit(message != nullptr, error = kErrorNoBufs);
 
-    SuccessOrExit(error = Tlv::Find<DelayTimerTlv>(aMessage, delayTimerMs));
-    switch (Tlv::Find<DurationTlv>(aMessage, durationSec))
+    SuccessOrExit(error = Tlv::Find<DelayTimerTlv>(aMsg.mMessage, delayTimerMs));
+    switch (Tlv::Find<DurationTlv>(aMsg.mMessage, durationSec))
     {
     case kErrorNone:
         break;
@@ -1157,7 +1147,7 @@ exit:
             Tlv::Append<StateTlv>(*message, error == kErrorNone ? StateTlv::State::kAccept : StateTlv::State::kReject);
         if (error == kErrorNone)
         {
-            error = Get<Tmf::Agent>().SendMessage(*message, aMessageInfo);
+            error = Get<Tmf::Agent>().SendMessage(*message, aMsg.mMessageInfo);
         }
         FreeMessageOnError(message, error);
     }

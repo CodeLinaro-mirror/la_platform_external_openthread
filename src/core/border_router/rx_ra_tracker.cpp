@@ -856,6 +856,16 @@ void RxRaTracker::Evaluate(void)
         mEventTask.Post();
     }
 
+#if OPENTHREAD_CONFIG_BORDER_ROUTING_DHCP6_PD_ENABLE
+    //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    // Check for possible conflict between delegated DHCPv6-PD prefix
+    // and any of the observed on-link or route prefixes. This protects
+    // against DHCPv6-PD server misbehavior (assigning same prefix to
+    // multiple requesters).
+
+    Get<RoutingManager>().mPdPrefixManager.CheckConflict(RoutingManager::PdPrefixManager::kRxRaPrefixTableChanged);
+#endif
+
     //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     // Schedule timers
 
@@ -1176,6 +1186,42 @@ exit:
     return isOnLink;
 }
 
+bool RxRaTracker::IsPrefixOnLink(const Ip6::Prefix &aPrefix) const
+{
+    bool isOnLink = false;
+
+    for (const Router &router : mRouters)
+    {
+        for (const OnLinkPrefix &onLinkPrefix : router.mOnLinkPrefixes)
+        {
+            if (aPrefix == onLinkPrefix.GetPrefix())
+            {
+                isOnLink = true;
+                ExitNow();
+            }
+        }
+    }
+
+exit:
+    return isOnLink;
+}
+
+bool RxRaTracker::ContainsRoutePrefix(const Ip6::Prefix &aPrefix) const
+{
+    bool contains = false;
+
+    for (const Router &router : mRouters)
+    {
+        if (router.mRoutePrefixes.ContainsMatching(aPrefix))
+        {
+            contains = true;
+            break;
+        }
+    }
+
+    return contains;
+}
+
 bool RxRaTracker::IsAddressReachableThroughExplicitRoute(const Ip6::Address &aAddress) const
 {
     // Checks whether the `aAddress` matches any discovered route
@@ -1371,21 +1417,14 @@ exit:
 
 const char *RxRaTracker::RouterAdvOriginToString(RouterAdvOrigin aRaOrigin)
 {
-    static const char *const kOriginStrings[] = {
-        "",                          // (0) kAnotherRouter
-        "(this BR routing-manager)", // (1) kThisBrRoutingManager
-        "(this BR other sw entity)", // (2) kThisBrOtherEntity
-    };
+#define RouterAdvOriginMapList(_)                         \
+    _(kAnotherRouter, "")                                 \
+    _(kThisBrRoutingManager, "(this BR routing-manager)") \
+    _(kThisBrOtherEntity, "(this BR other sw entity)")
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kAnotherRouter);
-        ValidateNextEnum(kThisBrRoutingManager);
-        ValidateNextEnum(kThisBrOtherEntity);
-    };
+    DefineEnumStringArray(RouterAdvOriginMapList);
 
-    return kOriginStrings[aRaOrigin];
+    return kStrings[aRaOrigin];
 }
 
 #endif // OT_SHOULD_LOG_AT(OT_LOG_LEVEL_INFO)
@@ -1786,7 +1825,6 @@ void RxRaTracker::RsSender::Stop(void) { mTimer.Stop(); }
 
 Error RxRaTracker::RsSender::SendRs(void)
 {
-    Ip6::Address              destAddress;
     RouterSolicitHeader       rsHdr;
     TxMessage                 rsMsg;
     InfraIf::LinkLayerAddress linkAddr;
@@ -1801,9 +1839,8 @@ Error RxRaTracker::RsSender::SendRs(void)
     }
 
     rsMsg.GetAsPacket(packet);
-    destAddress.SetToLinkLocalAllRoutersMulticast();
 
-    error = Get<InfraIf>().Send(packet, destAddress);
+    error = Get<InfraIf>().Send(packet, Ip6::Address::GetLinkLocalAllRoutersMulticast());
 
     if (error == kErrorNone)
     {
@@ -1839,7 +1876,7 @@ void RxRaTracker::RsSender::HandleTimer(void)
     }
     else
     {
-        LogCrit("RsSender: Failed to send RS %u/%u: %s", mTxCount + 1, kMaxTxCount, ErrorToString(error));
+        LogCritOnError(error, "send RS %u/%u", mTxCount + 1, kMaxTxCount);
 
         // Note that `mTxCount` is intentionally not incremented
         // if the tx fails.

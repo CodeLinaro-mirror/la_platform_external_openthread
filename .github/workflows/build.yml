@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
@@ -77,7 +77,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
@@ -93,7 +93,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -110,7 +110,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
@@ -150,7 +150,7 @@ jobs:
       CXX: ${{ matrix.compiler_cpp }}
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
@@ -169,7 +169,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
@@ -188,7 +188,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
@@ -247,7 +247,7 @@ jobs:
             gcc_extract_dir: arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
@@ -280,7 +280,7 @@ jobs:
       CXX: g++-${{ matrix.gcc_ver }}
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
@@ -313,7 +313,7 @@ jobs:
       CXX: clang++-${{ matrix.clang_ver }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
         with:
           egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
@@ -336,7 +336,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
@@ -346,14 +346,9 @@ jobs:
     - name: Bootstrap
       run: |
         sudo apt-get update
-        sudo apt-get --no-install-recommends install -y ninja-build
-        cd /tmp
-        wget -O gn.zip https://chrome-infra-packages.appspot.com/dl/gn/gn/linux-amd64/+/latest
-        unzip -o gn.zip
-        chmod a+x gn && mkdir -p bin && mv -f gn bin/
+        sudo apt-get --no-install-recommends install -y ninja-build gn
     - name: Build
       run: |
-        export PATH=/tmp/bin:$PATH
         script/check-gn-build
 
   macos:
@@ -372,7 +367,7 @@ jobs:
       CXX: ${{ matrix.CXX }}
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
@@ -396,7 +391,7 @@ jobs:
       image: openthread/environment
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+      uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
       with:
         egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
 
@@ -407,7 +402,7 @@ jobs:
       run: apt update && apt install -y unzip
     - name: Setup NDK
       id: setup-ndk
-      uses: nttld/setup-ndk@afb4c9964b521afb97c864b7d40b11e6911bd410 # v1.5.0
+      uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1.6.0
       with:
         ndk-version: r25c
         local-cache: true

@@ -273,6 +273,10 @@ private:
     void OutputChildTableEntry(uint8_t aIndentSize, const otNetworkDiagChildEntry &aChildEntry);
 #endif
 
+#if OPENTHREAD_CONFIG_BORDER_AGENT_TXT_DATA_PARSER_ENABLE
+    void OutputBorderAgentTxtDataInfo(uint8_t aIndentSize, const otBorderAgentTxtDataInfo &aInfo);
+#endif
+
 #if OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE
     void OutputTrelCounters(const otTrelCounters &aCounters);
 #endif
@@ -297,7 +301,7 @@ private:
     static void HandleDetachGracefullyResult(void *aContext);
     void        HandleDetachGracefullyResult(void);
 
-#if OPENTHREAD_FTD
+#if OPENTHREAD_FTD && OPENTHREAD_CONFIG_MLE_DISCOVERY_SCAN_REQUEST_CALLBACK_ENABLE
     static void HandleDiscoveryRequest(const otThreadDiscoveryRequestInfo *aInfo, void *aContext);
     void        HandleDiscoveryRequest(const otThreadDiscoveryRequestInfo &aInfo);
 #endif
@@ -324,8 +328,9 @@ private:
 #endif // OPENTHREAD_FTD || OPENTHREAD_MTD
 
 #if OPENTHREAD_CONFIG_DIAG_ENABLE
-    static void HandleDiagOutput(const char *aFormat, va_list aArguments, void *aContext);
-    void        HandleDiagOutput(const char *aFormat, va_list aArguments);
+    static void HandleDiagOutput(const char *aFormat, va_list aArguments, void *aContext)
+        OT_TOOL_PRINTF_STYLE_FORMAT_ARG_CHECK(1, 0);
+    void HandleDiagOutput(const char *aFormat, va_list aArguments) OT_TOOL_PRINTF_STYLE_FORMAT_ARG_CHECK(2, 0);
 #endif
 
     void SetCommandTimeout(uint32_t aTimeoutMilli);
