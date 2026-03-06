@@ -183,21 +183,16 @@ exit:
 
 Error Notifier::SendServerDataNotification(uint16_t aOldRloc16, const NetworkData *aNetworkData)
 {
-    Error            error = kErrorNone;
-    Coap::Message   *message;
-    Tmf::MessageInfo messageInfo(GetInstance());
+    Error          error = kErrorNone;
+    Coap::Message *message;
 
     message = Get<Tmf::Agent>().NewPriorityConfirmablePostMessage(kUriServerData);
     VerifyOrExit(message != nullptr, error = kErrorNoBufs);
 
     if (aNetworkData != nullptr)
     {
-        ThreadTlv tlv;
-
-        tlv.SetType(ThreadTlv::kThreadNetworkData);
-        tlv.SetLength(aNetworkData->GetLength());
-        SuccessOrExit(error = message->Append(tlv));
-        SuccessOrExit(error = message->AppendBytes(aNetworkData->GetBytes(), aNetworkData->GetLength()));
+        SuccessOrExit(error = Tlv::AppendTlv(*message, ThreadTlv::kThreadNetworkData, aNetworkData->GetBytes(),
+                                             aNetworkData->GetLength()));
 
 #if OPENTHREAD_FTD && OPENTHREAD_CONFIG_BORDER_ROUTER_SIGNAL_NETWORK_DATA_FULL
         Get<Leader>().CheckForNetDataGettingFull(*aNetworkData, aOldRloc16);
@@ -209,8 +204,7 @@ Error Notifier::SendServerDataNotification(uint16_t aOldRloc16, const NetworkDat
         SuccessOrExit(error = Tlv::Append<ThreadRloc16Tlv>(*message, aOldRloc16));
     }
 
-    messageInfo.SetSockAddrToRlocPeerAddrToLeaderAloc();
-    SuccessOrExit(error = Get<Tmf::Agent>().SendMessage(*message, messageInfo, HandleCoapResponse, this));
+    SuccessOrExit(error = Get<Tmf::Agent>().SendMessageToLeaderAloc(*message, HandleCoapResponse, this));
 
     LogInfo("Sent %s", UriToString<kUriServerData>());
 
@@ -246,9 +240,9 @@ void Notifier::HandleNotifierEvents(Events aEvents)
 
 void Notifier::HandleTimer(void) { SynchronizeServerData(); }
 
-void Notifier::HandleCoapResponse(Coap::Message *aMessage, Error aResult)
+void Notifier::HandleCoapResponse(Coap::Msg *aMsg, Error aResult)
 {
-    OT_UNUSED_VARIABLE(aMessage);
+    OT_UNUSED_VARIABLE(aMsg);
 
     mWaitingForResponse = false;
 

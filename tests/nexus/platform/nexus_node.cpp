@@ -38,7 +38,8 @@ void Node::Reset(void)
     uint32_t  id       = GetId();
 
     mRadio.Reset();
-    mAlarm.Reset();
+    mAlarmMilli.Reset();
+    mAlarmMicro.Reset();
     mMdns.Reset();
     mPendingTasklet = false;
 #if OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE
@@ -66,7 +67,7 @@ void Node::Form(void)
 void Node::Join(Node &aNode, JoinMode aJoinMode)
 {
     MeshCoP::Dataset dataset;
-    Mle::DeviceMode  mode(0);
+    uint8_t          mode = 0;
 
     switch (aJoinMode)
     {
@@ -75,18 +76,20 @@ void Node::Join(Node &aNode, JoinMode aJoinMode)
         OT_FALL_THROUGH;
 
     case kAsFtd:
-        mode.Set(Mle::DeviceMode::kModeRxOnWhenIdle | Mle::DeviceMode::kModeFullThreadDevice |
-                 Mle::DeviceMode::kModeFullNetworkData);
+        mode = Mle::DeviceMode::kModeRxOnWhenIdle | Mle::DeviceMode::kModeFullThreadDevice |
+               Mle::DeviceMode::kModeFullNetworkData;
         break;
     case kAsMed:
-        mode.Set(Mle::DeviceMode::kModeRxOnWhenIdle | Mle::DeviceMode::kModeFullNetworkData);
+        mode = Mle::DeviceMode::kModeRxOnWhenIdle | Mle::DeviceMode::kModeFullNetworkData;
+        break;
+    case kAsSedWithFullNetData:
+        mode = Mle::DeviceMode::kModeFullNetworkData;
         break;
     case kAsSed:
-        mode.Set(Mle::DeviceMode::kModeFullNetworkData);
         break;
     }
 
-    SuccessOrQuit(Get<Mle::Mle>().SetDeviceMode(mode));
+    SuccessOrQuit(Get<Mle::Mle>().SetDeviceMode(Mle::DeviceMode(mode)));
 
     SuccessOrQuit(aNode.Get<MeshCoP::ActiveDatasetManager>().Read(dataset));
     Get<MeshCoP::ActiveDatasetManager>().SaveLocal(dataset);
@@ -103,6 +106,30 @@ void Node::AllowList(Node &aNode)
 
 void Node::UnallowList(Node &aNode) { Get<Mac::Filter>().RemoveAddress(aNode.Get<Mac::Mac>().GetExtAddress()); }
 
+void Node::SendEchoRequest(const Ip6::Address &aDestination,
+                           uint16_t            aIdentifier,
+                           uint16_t            aPayloadSize,
+                           uint8_t             aHopLimit)
+{
+    Message         *message;
+    Ip6::MessageInfo messageInfo;
+
+    message = Get<Ip6::Icmp>().NewMessage();
+    VerifyOrQuit(message != nullptr);
+
+    SuccessOrQuit(message->SetLength(aPayloadSize));
+
+    messageInfo.SetPeerAddr(aDestination);
+    messageInfo.SetHopLimit(aHopLimit);
+
+    Log("Sending Echo Request from Node %lu (%s) to %s (payload-size:%u)", ToUlong(GetId()), GetName(),
+        aDestination.ToString().AsCString(), aPayloadSize);
+
+    SuccessOrQuit(Get<Ip6::Icmp>().SendEchoRequest(*message, messageInfo, aIdentifier));
+}
+
+void Node::SetName(const char *aPrefix, uint16_t aIndex) { mName.Clear().Append("%s_%u", aPrefix, aIndex); }
+
 #if OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE
 void Node::GetTrelSockAddr(Ip6::SockAddr &aSockAddr) const
 {
@@ -110,6 +137,27 @@ void Node::GetTrelSockAddr(Ip6::SockAddr &aSockAddr) const
     aSockAddr.SetPort(mTrel.mUdpPort);
 }
 #endif
+
+const Ip6::Address &Node::FindMatchingAddress(const char *aPrefix)
+{
+    Ip6::Prefix         prefix;
+    const Ip6::Address *matchedAddress = nullptr;
+
+    SuccessOrQuit(prefix.FromString(aPrefix));
+
+    for (const Ip6::Netif::UnicastAddress &unicastAddress : Get<ThreadNetif>().GetUnicastAddresses())
+    {
+        if (unicastAddress.GetAddress().MatchesPrefix(prefix))
+        {
+            matchedAddress = &unicastAddress.GetAddress();
+            break;
+        }
+    }
+
+    VerifyOrQuit(matchedAddress != nullptr, "no matching address found");
+
+    return *matchedAddress;
+}
 
 } // namespace Nexus
 } // namespace ot

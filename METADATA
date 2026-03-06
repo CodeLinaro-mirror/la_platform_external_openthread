@@ -7,14 +7,14 @@ description: "OpenThread is an open-source implementation of the Thread networki
 third_party {
   license_type: NOTICE
   last_upgrade_date {
-    year: 2025
+    year: 2026
     month: 3
-    day: 5
+    day: 3
   }
   homepage: "https://github.com/openthread/openthread"
   identifier {
     type: "Git"
     value: "https://github.com/openthread/openthread.git"
-    version: "a470e8bf0d1c9368f862d3627cafc02e13b351f7"
+    version: "5ec1e40578679dec13ab474fc685bc89f8056926"
   }
 }
