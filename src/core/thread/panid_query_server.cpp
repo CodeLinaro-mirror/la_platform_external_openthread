@@ -47,25 +47,24 @@ PanIdQueryServer::PanIdQueryServer(Instance &aInstance)
 {
 }
 
-template <>
-void PanIdQueryServer::HandleTmf<kUriPanIdQuery>(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo)
+template <> void PanIdQueryServer::HandleTmf<kUriPanIdQuery>(Coap::Msg &aMsg)
 {
     uint16_t panId;
     uint32_t mask;
 
-    VerifyOrExit(aMessage.IsPostRequest());
-    SuccessOrExit(MeshCoP::ChannelMaskTlv::FindIn(aMessage, mask));
+    VerifyOrExit(aMsg.IsPostRequest());
+    SuccessOrExit(MeshCoP::ChannelMaskTlv::FindIn(aMsg.mMessage, mask));
 
-    SuccessOrExit(Tlv::Find<MeshCoP::PanIdTlv>(aMessage, panId));
+    SuccessOrExit(Tlv::Find<MeshCoP::PanIdTlv>(aMsg.mMessage, panId));
 
     mChannelMask  = mask;
-    mCommissioner = aMessageInfo.GetPeerAddr();
+    mCommissioner = aMsg.mMessageInfo.GetPeerAddr();
     mPanId        = panId;
     mTimer.Start(kScanDelay);
 
-    if (aMessage.IsConfirmable() && !aMessageInfo.GetSockAddr().IsMulticast())
+    if (aMsg.IsConfirmable() && !aMsg.mMessageInfo.GetSockAddr().IsMulticast())
     {
-        SuccessOrExit(Get<Tmf::Agent>().SendEmptyAck(aMessage, aMessageInfo));
+        SuccessOrExit(Get<Tmf::Agent>().SendEmptyAck(aMsg));
         LogInfo("Sent %s ack", UriToString<kUriPanIdQuery>());
     }
 
@@ -73,12 +72,7 @@ exit:
     return;
 }
 
-void PanIdQueryServer::HandleScanResult(Mac::ActiveScanResult *aScanResult, void *aContext)
-{
-    static_cast<PanIdQueryServer *>(aContext)->HandleScanResult(aScanResult);
-}
-
-void PanIdQueryServer::HandleScanResult(Mac::ActiveScanResult *aScanResult)
+void PanIdQueryServer::HandleScanResult(const ScanResult *aScanResult)
 {
     if (aScanResult != nullptr)
     {
@@ -95,9 +89,8 @@ void PanIdQueryServer::HandleScanResult(Mac::ActiveScanResult *aScanResult)
 
 void PanIdQueryServer::SendConflict(void)
 {
-    Error            error = kErrorNone;
-    Tmf::MessageInfo messageInfo(GetInstance());
-    Coap::Message   *message;
+    Error          error = kErrorNone;
+    Coap::Message *message;
 
     message = Get<Tmf::Agent>().NewPriorityConfirmablePostMessage(kUriPanIdConflict);
     VerifyOrExit(message != nullptr, error = kErrorNoBufs);
@@ -106,9 +99,7 @@ void PanIdQueryServer::SendConflict(void)
 
     SuccessOrExit(error = Tlv::Append<MeshCoP::PanIdTlv>(*message, mPanId));
 
-    messageInfo.SetSockAddrToRlocPeerAddrTo(mCommissioner);
-
-    SuccessOrExit(error = Get<Tmf::Agent>().SendMessage(*message, messageInfo));
+    SuccessOrExit(error = Get<Tmf::Agent>().SendMessageTo(*message, mCommissioner));
 
     LogInfo("Sent %s", UriToString<kUriPanIdConflict>());
 

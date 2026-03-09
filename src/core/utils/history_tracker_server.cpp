@@ -47,18 +47,19 @@ Server::Server(Instance &aInstance)
 {
 }
 
-template <> void Server::HandleTmf<kUriHistoryQuery>(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo)
+template <> void Server::HandleTmf<kUriHistoryQuery>(Coap::Msg &aMsg)
 {
-    VerifyOrExit(aMessage.IsPostRequest());
+    VerifyOrExit(aMsg.IsPostRequest());
 
-    LogInfo("Received %s from %s", UriToString<kUriHistoryQuery>(), aMessageInfo.GetPeerAddr().ToString().AsCString());
+    LogInfo("Received %s from %s", UriToString<kUriHistoryQuery>(),
+            aMsg.mMessageInfo.GetPeerAddr().ToString().AsCString());
 
-    if (aMessage.IsConfirmable())
+    if (aMsg.IsConfirmable())
     {
-        IgnoreError(Get<Tmf::Agent>().SendEmptyAck(aMessage, aMessageInfo));
+        IgnoreError(Get<Tmf::Agent>().SendEmptyAck(aMsg));
     }
 
-    PrepareAndSendAnswers(aMessageInfo.GetPeerAddr(), aMessage);
+    PrepareAndSendAnswers(aMsg.mMessageInfo.GetPeerAddr(), aMsg.mMessage);
 
 exit:
     return;
@@ -128,13 +129,13 @@ void Server::FreeAllRelatedAnswers(Coap::Message &aFirstAnswer)
 
 void Server::PrepareAndSendAnswers(const Ip6::Address &aDestination, const Message &aRequest)
 {
-    Coap::Message  *answer;
-    Error           error;
-    AnswerInfo      info;
-    OffsetRange     offsetRange;
-    Tlv::ParsedInfo tlvInfo;
-    RequestTlv      requestTlv;
-    AnswerTlv       answerTlv;
+    Coap::Message *answer;
+    Error          error;
+    AnswerInfo     info;
+    OffsetRange    offsetRange;
+    Tlv::Info      tlvInfo;
+    RequestTlv     requestTlv;
+    AnswerTlv      answerTlv;
 
     if (Tlv::Find<QueryIdTlv>(aRequest, info.mQueryId) == kErrorNone)
     {
@@ -151,12 +152,12 @@ void Server::PrepareAndSendAnswers(const Ip6::Address &aDestination, const Messa
     {
         SuccessOrExit(error = tlvInfo.ParseFrom(aRequest, offsetRange));
 
-        if (tlvInfo.mIsExtended)
+        if (tlvInfo.IsExtended())
         {
             continue;
         }
 
-        if (tlvInfo.mType == Tlv::kRequest)
+        if (tlvInfo.GetType() == Tlv::kRequest)
         {
             SuccessOrExit(error = aRequest.Read(offsetRange, requestTlv));
             VerifyOrExit(requestTlv.IsValid(), error = kErrorParse);
@@ -210,18 +211,15 @@ exit:
 
 void Server::SendNextAnswer(Coap::Message &aAnswer, const Ip6::Address &aDestination)
 {
-    Error            error      = kErrorNone;
-    Coap::Message   *nextAnswer = IsLastAnswer(aAnswer) ? nullptr : aAnswer.GetNextCoapMessage();
-    Tmf::MessageInfo messageInfo(GetInstance());
+    Error          error      = kErrorNone;
+    Coap::Message *nextAnswer = IsLastAnswer(aAnswer) ? nullptr : aAnswer.GetNextCoapMessage();
 
     mAnswerQueue.Dequeue(aAnswer);
-
-    PrepareMessageInfoForDest(aDestination, messageInfo);
 
     // When sending the message, we pass `nextAnswer` as `aContext`
     // to be used when invoking callback `HandleAnswerResponse()`.
 
-    error = Get<Tmf::Agent>().SendMessage(aAnswer, messageInfo, HandleAnswerResponse, nextAnswer);
+    error = Get<Tmf::Agent>().SendMessageAllowMulticastLoop(aAnswer, aDestination, HandleAnswerResponse, nextAnswer);
 
     if (error != kErrorNone)
     {
@@ -237,53 +235,27 @@ void Server::SendNextAnswer(Coap::Message &aAnswer, const Ip6::Address &aDestina
     }
 }
 
-void Server::PrepareMessageInfoForDest(const Ip6::Address &aDestination, Tmf::MessageInfo &aMessageInfo) const
-{
-    if (aDestination.IsMulticast())
-    {
-        aMessageInfo.SetMulticastLoop(true);
-    }
-
-    if (aDestination.IsLinkLocalUnicastOrMulticast())
-    {
-        aMessageInfo.SetSockAddr(Get<Mle::Mle>().GetLinkLocalAddress());
-    }
-    else
-    {
-        aMessageInfo.SetSockAddrToRloc();
-    }
-
-    aMessageInfo.SetPeerAddr(aDestination);
-}
-
-void Server::HandleAnswerResponse(void                *aContext,
-                                  otMessage           *aMessage,
-                                  const otMessageInfo *aMessageInfo,
-                                  otError              aResult)
+void Server::HandleAnswerResponse(void *aContext, Coap::Msg *aMsg, Error aResult)
 {
     Coap::Message *nextAnswer = static_cast<Coap::Message *>(aContext);
 
     VerifyOrExit(nextAnswer != nullptr);
 
-    nextAnswer->Get<Server>().HandleAnswerResponse(*nextAnswer, AsCoapMessagePtr(aMessage), AsCoreTypePtr(aMessageInfo),
-                                                   aResult);
+    nextAnswer->Get<Server>().HandleAnswerResponse(*nextAnswer, aMsg, aResult);
 
 exit:
     return;
 }
 
-void Server::HandleAnswerResponse(Coap::Message          &aNextAnswer,
-                                  Coap::Message          *aResponse,
-                                  const Ip6::MessageInfo *aMessageInfo,
-                                  Error                   aResult)
+void Server::HandleAnswerResponse(Coap::Message &aNextAnswer, Coap::Msg *aResponse, Error aResult)
 {
     Error error = aResult;
 
     SuccessOrExit(error);
-    VerifyOrExit(aResponse != nullptr && aMessageInfo != nullptr, error = kErrorDrop);
+    VerifyOrExit(aResponse != nullptr, error = kErrorDrop);
     VerifyOrExit(aResponse->GetCode() == Coap::kCodeChanged, error = kErrorDrop);
 
-    SendNextAnswer(aNextAnswer, aMessageInfo->GetPeerAddr());
+    SendNextAnswer(aNextAnswer, aResponse->mMessageInfo.GetPeerAddr());
 
 exit:
     if (error != kErrorNone)
@@ -325,20 +297,10 @@ Error Server::AppendNetworkInfo(Coap::Message *&aAnswer, AnswerInfo &aInfo, cons
         SuccessOrExit(error = CheckAnswerLength(aAnswer, aInfo));
     }
 
-    SuccessOrExit(error = AppendEmptyTlv(*aAnswer, Tlv::kNetworkInfo));
+    SuccessOrExit(error = Tlv::AppendEmpty<NetworkInfoTlv>(*aAnswer));
 
 exit:
     return error;
-}
-
-Error Server::AppendEmptyTlv(Coap::Message &aAnswer, Tlv::Type aTlvType)
-{
-    Tlv tlv;
-
-    tlv.SetType(aTlvType);
-    tlv.SetLength(0);
-
-    return aAnswer.Append(tlv);
 }
 
 } // namespace HistoryTracker

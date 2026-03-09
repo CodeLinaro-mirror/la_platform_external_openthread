@@ -173,6 +173,7 @@ ot_option(OT_BACKBONE_ROUTER OPENTHREAD_CONFIG_BACKBONE_ROUTER_ENABLE "backbone 
 ot_option(OT_BACKBONE_ROUTER_DUA_NDPROXYING OPENTHREAD_CONFIG_BACKBONE_ROUTER_DUA_NDPROXYING_ENABLE "BBR DUA ND Proxy")
 ot_option(OT_BACKBONE_ROUTER_MULTICAST_ROUTING OPENTHREAD_CONFIG_BACKBONE_ROUTER_MULTICAST_ROUTING_ENABLE "BBR MR")
 ot_option(OT_BLE_TCAT OPENTHREAD_CONFIG_BLE_TCAT_ENABLE "Ble based thread commissioning")
+ot_option(OT_BORDER_ADMITTER OPENTHREAD_CONFIG_BORDER_AGENT_ADMITTER_ENABLE "border agent admitter")
 ot_option(OT_BORDER_AGENT OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE "border agent")
 ot_option(OT_BORDER_AGENT_EPSKC OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE "border agent ephemeral PSKc")
 ot_option(OT_BORDER_AGENT_ID OPENTHREAD_CONFIG_BORDER_AGENT_ID_ENABLE "create and save border agent ID")
@@ -252,6 +253,7 @@ ot_option(OT_PLATFORM_NETIF OPENTHREAD_CONFIG_PLATFORM_NETIF_ENABLE "platform ne
 ot_option(OT_PLATFORM_POWER_CALIBRATION OPENTHREAD_CONFIG_PLATFORM_POWER_CALIBRATION_ENABLE "power calibration")
 ot_option(OT_PLATFORM_UDP OPENTHREAD_CONFIG_PLATFORM_UDP_ENABLE "platform UDP")
 ot_option(OT_REFERENCE_DEVICE OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE "test harness reference device")
+ot_option(OT_SEEKER OPENTHREAD_CONFIG_SEEKER_ENABLE "seeker")
 ot_option(OT_SERVICE OPENTHREAD_CONFIG_TMF_NETDATA_SERVICE_ENABLE "Network Data service")
 ot_option(OT_SETTINGS_RAM OPENTHREAD_SETTINGS_RAM "volatile-only storage of settings")
 ot_option(OT_SLAAC OPENTHREAD_CONFIG_IP6_SLAAC_ENABLE "SLAAC address")
@@ -260,7 +262,7 @@ ot_option(OT_SRP_ADV_PROXY OPENTHREAD_CONFIG_SRP_SERVER_ADVERTISING_PROXY_ENABLE
 ot_option(OT_SRP_CLIENT OPENTHREAD_CONFIG_SRP_CLIENT_ENABLE "SRP client")
 ot_option(OT_SRP_SERVER OPENTHREAD_CONFIG_SRP_SERVER_ENABLE "SRP server")
 ot_option(OT_SRP_SERVER_FAST_START_MODE OPENTHREAD_CONFIG_SRP_SERVER_FAST_START_MODE_ENABLE "SRP server fast start")
-ot_option(OT_STEERING_DATA OPENTHREAD_CONFIG_MESHCOP_STEERING_DATA_API_ENABLE, "MeshCoP Steering Data APIs")
+ot_option(OT_STEERING_DATA OPENTHREAD_CONFIG_MESHCOP_STEERING_DATA_API_ENABLE "MeshCoP Steering Data APIs")
 ot_option(OT_TCP OPENTHREAD_CONFIG_TCP_ENABLE "TCP")
 ot_option(OT_TIME_SYNC OPENTHREAD_CONFIG_TIME_SYNC_ENABLE "time synchronization service")
 ot_option(OT_TREL OPENTHREAD_CONFIG_RADIO_LINK_TREL_ENABLE "TREL radio link for Thread over Infrastructure feature")
@@ -301,6 +303,10 @@ list(FIND OT_PLATFORM_VALUES "${OT_PLATFORM}" ot_index)
 if(ot_index EQUAL -1)
     message(FATAL_ERROR "Invalid value for OT_PLATFORM - valid values are:" "${OT_PLATFORM_VALUES}")
 endif()
+
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+set(OT_CRYPTO_LIB_VALUES "MBEDTLS" "PSA" "PLATFORM")
+ot_multi_option(OT_CRYPTO_LIB OT_CRYPTO_LIB_VALUES OPENTHREAD_CONFIG_CRYPTO_LIB OPENTHREAD_CONFIG_CRYPTO_LIB_ "set Crypto backend library")
 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 set(OT_THREAD_VERSION_VALUES "1.1" "1.2" "1.3" "1.3.1" "1.4")
@@ -359,7 +365,7 @@ ot_int_option(OT_RCP_TX_WAIT_TIME_SECS OPENTHREAD_SPINEL_CONFIG_RCP_TX_WAIT_TIME
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 if(NOT OT_EXTERNAL_MBEDTLS)
-    set(OT_MBEDTLS mbedtls)
+    set(OT_MBEDTLS mbedtls mbedcrypto)
     target_compile_definitions(ot-config INTERFACE "OPENTHREAD_CONFIG_ENABLE_BUILTIN_MBEDTLS=1")
 else()
     set(OT_MBEDTLS ${OT_EXTERNAL_MBEDTLS})

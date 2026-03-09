@@ -494,7 +494,6 @@ void RoutingManager::SendRouterAdvertisement(RouterAdvTxMode aRaTxMode)
     Error                     error = kErrorNone;
     RouterAdvert::TxMessage   raMsg;
     RouterAdvert::Header      header;
-    Ip6::Address              destAddress;
     InfraIf::Icmp6Packet      packet;
     InfraIf::LinkLayerAddress linkAddr;
 
@@ -545,12 +544,11 @@ void RoutingManager::SendRouterAdvertisement(RouterAdvTxMode aRaTxMode)
     // Exit when the size of packet is less than the size of header.
     VerifyOrExit(raMsg.ContainsAnyOptions());
 
-    destAddress.SetToLinkLocalAllNodesMulticast();
     raMsg.GetAsPacket(packet);
 
     mTxRaInfo.IncrementTxCountAndSaveHash(packet);
 
-    SuccessOrExit(error = Get<InfraIf>().Send(packet, destAddress));
+    SuccessOrExit(error = Get<InfraIf>().Send(packet, Ip6::Address::GetLinkLocalAllNodesMulticast()));
 
     mTxRaInfo.mLastTxTime = TimerMilli::GetNow();
     Get<Ip6::Ip6>().GetBorderRoutingCounters().mRaTxSuccess++;
@@ -561,8 +559,9 @@ exit:
     if (error != kErrorNone)
     {
         Get<Ip6::Ip6>().GetBorderRoutingCounters().mRaTxFailure++;
-        LogWarn("Failed to send RA on %s: %s", Get<InfraIf>().ToString().AsCString(), ErrorToString(error));
     }
+
+    LogWarnOnError(error, "send RA on %s", Get<InfraIf>().ToString().AsCString());
 }
 
 bool RoutingManager::IsValidBrUlaPrefix(const Ip6::Prefix &aBrUlaPrefix)
@@ -865,7 +864,7 @@ void RoutingManager::OmrPrefixManager::UpdateLocalPrefix(void)
     {
     case kOmrConfigAuto:
 #if OPENTHREAD_CONFIG_BORDER_ROUTING_DHCP6_PD_ENABLE
-        if (Get<RoutingManager>().mPdPrefixManager.HasPrefix())
+        if (Get<RoutingManager>().mPdPrefixManager.HasPrefix() && !Get<RoutingManager>().mPdPrefixManager.HasConflict())
         {
             if (mLocalPrefix.GetPrefix() != Get<RoutingManager>().mPdPrefixManager.GetPrefix())
             {
@@ -877,6 +876,7 @@ void RoutingManager::OmrPrefixManager::UpdateLocalPrefix(void)
         }
         else
 #endif
+
             if (mLocalPrefix.GetPrefix() != mGeneratedPrefix)
         {
             RemoveLocalFromNetData();
@@ -994,20 +994,14 @@ Error RoutingManager::OmrPrefixManager::AddOrUpdateLocalInNetData(void)
     config.mDefaultRoute = mDefaultRoute;
     config.mPreference   = mLocalPrefix.GetPreference();
 
-    error = Get<NetworkData::Local>().AddOnMeshPrefix(config);
-
-    if (error != kErrorNone)
-    {
-        LogWarn("Failed to %s %s in Thread Network Data: %s", !mIsLocalAddedInNetData ? "add" : "update",
-                LocalToString().AsCString(), ErrorToString(error));
-        ExitNow();
-    }
-
+    SuccessOrExit(error = Get<NetworkData::Local>().AddOnMeshPrefix(config));
     Get<NetworkData::Notifier>().HandleServerDataUpdated();
 
     LogInfo("%s %s in Thread Network Data", !mIsLocalAddedInNetData ? "Added" : "Updated", LocalToString().AsCString());
 
 exit:
+    LogWarnOnError(error, "%s %s in Thread Network Data", !mIsLocalAddedInNetData ? "add" : "update",
+                   LocalToString().AsCString());
     return error;
 }
 
@@ -1019,10 +1013,7 @@ void RoutingManager::OmrPrefixManager::RemoveLocalFromNetData(void)
 
     error = Get<NetworkData::Local>().RemoveOnMeshPrefix(mLocalPrefix.GetPrefix());
 
-    if (error != kErrorNone)
-    {
-        LogWarn("Failed to remove %s from Thread Network Data: %s", LocalToString().AsCString(), ErrorToString(error));
-    }
+    LogWarnOnError(error, "remove %s from Thread Network Data", LocalToString().AsCString());
 
     mIsLocalAddedInNetData = false;
     Get<NetworkData::Notifier>().HandleServerDataUpdated();
@@ -1086,21 +1077,14 @@ RoutingManager::OmrPrefixManager::InfoString RoutingManager::OmrPrefixManager::F
 
 const char *RoutingManager::OmrPrefixManager::OmrConfigToString(OmrConfig aConfig)
 {
-    static const char *const kConfigStrings[] = {
-        "auto",     // (0) kOmrConfigAuto
-        "custom",   // (1) kOmrConfigCustom
-        "disabled", // (2) kOmrConfigDisabled
-    };
+#define OmrConfigMapList(_)       \
+    _(kOmrConfigAuto, "auto")     \
+    _(kOmrConfigCustom, "custom") \
+    _(kOmrConfigDisabled, "disabled")
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kOmrConfigAuto);
-        ValidateNextEnum(kOmrConfigCustom);
-        ValidateNextEnum(kOmrConfigDisabled);
-    };
+    DefineEnumStringArray(OmrConfigMapList);
 
-    return kConfigStrings[aConfig];
+    return kStrings[aConfig];
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -1197,7 +1181,7 @@ void RoutingManager::OnLinkPrefixManager::Init(void)
 
 void RoutingManager::OnLinkPrefixManager::GenerateLocalPrefix(void)
 {
-    const MeshCoP::ExtendedPanId &extPanId = Get<MeshCoP::ExtendedPanIdManager>().GetExtPanId();
+    const MeshCoP::ExtendedPanId &extPanId = Get<MeshCoP::NetworkIdentity>().GetExtPanId();
     OldPrefix                    *entry;
     Ip6::Prefix                   oldLocalPrefix = mLocalPrefix;
 
@@ -1680,23 +1664,15 @@ void RoutingManager::OnLinkPrefixManager::HandleTimer(void)
 
 const char *RoutingManager::OnLinkPrefixManager::StateToString(State aState)
 {
-    static const char *const kStateStrings[] = {
-        "Removed",     // (0) kIdle
-        "Publishing",  // (1) kPublishing
-        "Advertising", // (2) kAdvertising
-        "Deprecating", // (3) kDeprecating
-    };
+#define OnLinkPrefixManagerStateMapList(_) \
+    _(kIdle, "Removed")                    \
+    _(kPublishing, "Publishing")           \
+    _(kAdvertising, "Advertising")         \
+    _(kDeprecating, "Deprecating")
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kIdle);
-        ValidateNextEnum(kPublishing);
-        ValidateNextEnum(kAdvertising);
-        ValidateNextEnum(kDeprecating);
-    };
+    DefineEnumStringArray(OnLinkPrefixManagerStateMapList);
 
-    return kStateStrings[aState];
+    return kStrings[aState];
 }
 
 //---------------------------------------------------------------------------------------------------------------------
@@ -2168,21 +2144,14 @@ exit:
 
 const char *RoutingManager::RoutePublisher::StateToString(State aState)
 {
-    static const char *const kStateStrings[] = {
-        "none",      // (0) kDoNotPublish
-        "def-route", // (1) kPublishDefault
-        "ula",       // (2) kPublishUla
-    };
+#define RoutePublisherStateMapList(_) \
+    _(kDoNotPublish, "none")          \
+    _(kPublishDefault, "def-route")   \
+    _(kPublishUla, "ula")
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kDoNotPublish);
-        ValidateNextEnum(kPublishDefault);
-        ValidateNextEnum(kPublishUla);
-    };
+    DefineEnumStringArray(RoutePublisherStateMapList)
 
-    return kStateStrings[aState];
+        return kStrings[aState];
 }
 
 #if OPENTHREAD_CONFIG_NAT64_BORDER_ROUTING_ENABLE
@@ -2410,8 +2379,9 @@ void RoutingManager::Nat64PrefixManager::Discover(void)
     {
         if (error != kErrorNotImplemented)
         {
-            LogWarn("Failed to discover infraif NAT64 prefix: %s", ErrorToString(error));
+            LogWarnOnError(error, "discover infraif NAT64 prefix");
         }
+
         Get<RoutingManager>().ScheduleRoutingPolicyEvaluation(kAfterRandomDelay);
     }
 }
@@ -2526,6 +2496,8 @@ void RoutingManager::TxRaInfo::CalculateHash(const RouterAdvert::RxMessage &aRaM
 RoutingManager::PdPrefixManager::PdPrefixManager(Instance &aInstance)
     : InstanceLocator(aInstance)
     , mState(kDhcp6PdStateDisabled)
+    , mOnLinkPrefixConflict(false)
+    , mRoutePrefixConflict(false)
     , mNumPlatformPioProcessed(0)
     , mNumPlatformRaReceived(0)
     , mLastPlatformRaTime(0)
@@ -2547,6 +2519,15 @@ void RoutingManager::PdPrefixManager::SetEnabled(bool aEnabled)
     {
         SetState(kDhcp6PdStateDisabled);
     }
+
+exit:
+    return;
+}
+
+void RoutingManager::PdPrefixManager::Stop(void)
+{
+    VerifyOrExit(mState != kDhcp6PdStateDisabled);
+    SetState(kDhcp6PdStateStopped);
 
 exit:
     return;
@@ -2658,6 +2639,9 @@ void RoutingManager::PdPrefixManager::WithdrawPrefix(void)
     LogInfo("Withdrew DHCPv6 PD prefix %s", mPrefix.GetPrefix().ToString().AsCString());
 
     mPrefix.Clear();
+    mOnLinkPrefixConflict = false;
+    mRoutePrefixConflict  = false;
+
     mTimer.Stop();
 
     Get<RoutingManager>().ScheduleRoutingPolicyEvaluation(kImmediately);
@@ -2749,7 +2733,10 @@ void RoutingManager::PdPrefixManager::ApplyFavoredPrefix(const PdPrefix &aFavore
     if (aFavoredPrefix.IsFavoredOver(mPrefix))
     {
         mPrefix = aFavoredPrefix;
+
         LogInfo("DHCPv6 PD prefix set to %s", mPrefix.GetPrefix().ToString().AsCString());
+        CheckConflict(kPdPrefixChanged);
+
         Get<RoutingManager>().ScheduleRoutingPolicyEvaluation(kImmediately);
 
 #if OPENTHREAD_CONFIG_HISTORY_TRACKER_ENABLE
@@ -2805,6 +2792,87 @@ exit:
     return;
 }
 
+void RoutingManager::PdPrefixManager::CheckConflict(ConflictCheckEvent aEvent)
+{
+    // Checks if the delegated PD prefix is also seen as an on-link or
+    // route prefix. This protects against DHCPv6-PD server misbehavior
+    // assigning the same prefix to multiple requesters.
+    //
+    // If a conflict is detected, the delegated PD prefix is no longer
+    // used as OMR prefix, reverting back to using the local OMR
+    // prefix. Once the conflict is resolved, the PD prefix can be
+    // used as OMR prefix again.
+
+    bool hadConflict;
+
+    VerifyOrExit(HasPrefix());
+
+    hadConflict = HasConflict();
+
+    CheckConflictWithOnLinkPrefixes();
+    CheckConflictWithRoutePrefixes(aEvent);
+
+    if (hadConflict != HasConflict())
+    {
+        Get<RoutingManager>().ScheduleRoutingPolicyEvaluation(kImmediately);
+    }
+
+exit:
+    return;
+}
+
+void RoutingManager::PdPrefixManager::CheckConflictWithOnLinkPrefixes(void)
+{
+    UpdateConflictFlag(mOnLinkPrefixConflict, Get<RxRaTracker>().IsPrefixOnLink(mPrefix.GetPrefix()), "on-link");
+}
+
+void RoutingManager::PdPrefixManager::CheckConflictWithRoutePrefixes(ConflictCheckEvent aEvent)
+{
+    // Conflict detection for route prefixes depends on the triggering
+    // event and the current state.
+    //
+    // If a new PD prefix is assigned (`kPdPrefixChanged`), any matching
+    // route prefix (RIO) is flagged as a conflict.
+    //
+    // If `RxRaTracker` is changed (`kRxRaPrefixTableChanged`), we check
+    // only for conflict resolution:
+    // - If conflicted, we check if the interfering RIO is removed.
+    // - We ignore any new RIO route matches. Once the PD prefix is
+    //   adopted, it is published in Thread Network Data as the OMR
+    //   prefix. Other BRs connected to the same mesh will see this and
+    //   advertise it as a RIO in their emitted RAs to announce
+    //   reachability to the Thread mesh. We must not treat these
+    //   expected advertisements as conflicts.
+
+    switch (aEvent)
+    {
+    case kPdPrefixChanged:
+        break;
+    case kRxRaPrefixTableChanged:
+        VerifyOrExit(mRoutePrefixConflict);
+        break;
+    }
+
+    UpdateConflictFlag(mRoutePrefixConflict, Get<RxRaTracker>().ContainsRoutePrefix(mPrefix.GetPrefix()), "route");
+
+exit:
+    return;
+}
+
+void RoutingManager::PdPrefixManager::UpdateConflictFlag(bool &aConflictFlag, bool aNewFlag, const char *aPrefixType)
+{
+    OT_UNUSED_VARIABLE(aPrefixType);
+
+    VerifyOrExit(aConflictFlag != aNewFlag);
+    aConflictFlag = aNewFlag;
+
+    LogInfo("DHCPv6 PD prefix %s %sconflicts with the advertised %s prefixes",
+            mPrefix.GetPrefix().ToString().AsCString(), aNewFlag ? "" : "no longer ", aPrefixType);
+
+exit:
+    return;
+}
+
 #if OPENTHREAD_CONFIG_HISTORY_TRACKER_ENABLE
 
 void RoutingManager::PdPrefixManager::HandleRecordHistoryTask(void)
@@ -2851,23 +2919,15 @@ exit:
 
 const char *RoutingManager::PdPrefixManager::StateToString(State aState)
 {
-    static const char *const kStateStrings[] = {
-        "Disabled", // (0) kDisabled
-        "Stopped",  // (1) kStopped
-        "Running",  // (2) kRunning
-        "Idle",     // (3) kIdle
-    };
+#define PdPrefixManagerStateMapList(_)   \
+    _(kDhcp6PdStateDisabled, "Disabled") \
+    _(kDhcp6PdStateStopped, "Stopped")   \
+    _(kDhcp6PdStateRunning, "Running")   \
+    _(kDhcp6PdStateIdle, "Idle")
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kDhcp6PdStateDisabled);
-        ValidateNextEnum(kDhcp6PdStateStopped);
-        ValidateNextEnum(kDhcp6PdStateRunning);
-        ValidateNextEnum(kDhcp6PdStateIdle);
-    };
+    DefineEnumStringArray(PdPrefixManagerStateMapList);
 
-    return kStateStrings[aState];
+    return kStrings[aState];
 }
 
 #if !OPENTHREAD_CONFIG_BORDER_ROUTING_DHCP6_PD_CLIENT_ENABLE

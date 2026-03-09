@@ -48,8 +48,18 @@ namespace Cli {
  * ba enable
  * Done
  * @endcode
- * @par api_copy
- * #otBorderAgentSetEnabled
+ * @par
+ * Enables the Border Agent service on the device.
+ * @par
+ * By default, the Border Agent service is enabled. The `ba enable` and `ba disable` commands allow users to explicitly
+ * control its state. This can be useful in scenarios such as:
+ * - The user wishes to delay the start of the Border Agent service (and its mDNS advertisement of the `_meshcop._udp`
+ *   service on the infrastructure link). This allows time to prepare or determine vendor-specific TXT data entries for
+ *   inclusion.
+ * - Unit tests or test scripts might disable the Border Agent service to prevent it from interfering with specific
+ *   test steps. For example, tests validating mDNS or DNS-SD functionality may disable the Border Agent to prevent its
+ *   registration of the MeshCoP service.
+ * @sa otBorderAgentSetEnabled
  */
 template <> otError Ba::Process<Cmd("enable")>(Arg aArgs[])
 {
@@ -68,8 +78,10 @@ exit:
  * ba disable
  * Done
  * @endcode
- * @par api_copy
- * #otBorderAgentSetEnabled
+ * @par
+ * Disables the Border Agent service on the device.
+ * @csa{ba enable}
+ * @sa otBorderAgentSetEnabled
  */
 template <> otError Ba::Process<Cmd("disable")>(Arg aArgs[])
 {
@@ -167,8 +179,8 @@ template <> otError Ba::Process<Cmd("sessions")>(Arg aArgs[])
     {
         otIp6SockAddrToString(&info.mPeerSockAddr, sockAddrString, sizeof(sockAddrString));
 
-        OutputLine("%s connected:%s commissioner:%s lifetime:%s", sockAddrString, info.mIsConnected ? "yes" : "no",
-                   info.mIsCommissioner ? "yes" : "no", Uint64ToString(info.mLifetime, lifetimeString));
+        OutputLine("%s connected:%s commissioner:%s lifetime:%s", sockAddrString, ToYesNo(info.mIsConnected),
+                   ToYesNo(info.mIsCommissioner), Uint64ToString(info.mLifetime, lifetimeString));
     }
 exit:
     return error;
@@ -377,7 +389,7 @@ template <> otError Ba::Process<Cmd("ephemeralkey")>(Arg aArgs[])
     {
     }
     /**
-     * @cli ba ephemeralkey start <keystring> [timeout-in-msec] [port]
+     * @cli ba ephemeralkey start
      * @code
      * ba ephemeralkey start Z10X20g3J15w1000P60m16 5000 1234
      * Done
@@ -469,6 +481,66 @@ template <> otError Ba::Process<Cmd("ephemeralkey")>(Arg aArgs[])
             otBorderAgentEphemeralKeySetCallback(GetInstancePtr(), nullptr, nullptr);
         }
     }
+#if OPENTHREAD_CONFIG_VERHOEFF_CHECKSUM_ENABLE
+    /**
+     * @cli ba ephemeralkey generate-tap
+     * @code
+     * ba ephemeralkey generate-tap
+     * 989710128
+     * Done
+     * @endcode
+     * @par
+     * Generates a cryptographically secure random Thread Administration One-Time Passcode (TAP) string.
+     * @par
+     * Requires `OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE` and `OPENTHREAD_CONFIG_VERHOEFF_CHECKSUM_ENABLE`.
+     * @par
+     * The TAP is a string of 9 characters, generated as a sequence of eight cryptographically secure random
+     * numeric digits [`0`-`9`] followed by a single check digit determined using the Verhoeff algorithm.
+     * @par
+     * Note that this command simply generates and outputs a TAP. It does not start ephemeral key use with this TAP on
+     * the Border Agent.
+     * @sa otBorderAgentEphemeralKeyGenerateTap
+     */
+    else if (aArgs[0] == "generate-tap")
+    {
+        otBorderAgentEphemeralKeyTap tap;
+
+        VerifyOrExit(aArgs[1].IsEmpty(), error = OT_ERROR_INVALID_ARGS);
+
+        SuccessOrExit(error = otBorderAgentEphemeralKeyGenerateTap(&tap));
+        OutputLine("%s", tap.mTap);
+    }
+    /**
+     * @cli ba ephemeralkey validate-tap
+     * @code
+     * ba ephemeralkey validate-tap 989710128
+     * validated
+     * Done
+     * @endcode
+     * @cparam ba ephemeralkey validate-tap @ca{tapstring}
+     * @par
+     * Validates a given Thread Administration One-Time Passcode (TAP) string.
+     * @par
+     * Requires `OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE` and `OPENTHREAD_CONFIG_VERHOEFF_CHECKSUM_ENABLE`.
+     * @par
+     * Validates that the TAP string has the proper length, contains digit characters [`0`-`9`], and validates the
+     * Verhoeff checksum.
+     * @sa otBorderAgentEphemeralKeyValidateTap
+     */
+    else if (aArgs[0] == "validate-tap")
+    {
+        otBorderAgentEphemeralKeyTap tap;
+
+        ClearAllBytes(tap);
+
+        VerifyOrExit(!aArgs[1].IsEmpty(), error = OT_ERROR_INVALID_ARGS);
+        VerifyOrExit(aArgs[1].GetLength() <= OT_BORDER_AGENT_EPHEMERAL_KEY_TAP_STRING_LENGTH,
+                     error = OT_ERROR_INVALID_ARGS);
+        memcpy(tap.mTap, aArgs[1].GetCString(), aArgs[1].GetLength());
+        SuccessOrExit(error = otBorderAgentEphemeralKeyValidateTap(&tap));
+        OutputLine("validated");
+    }
+#endif // OPENTHREAD_CONFIG_VERHOEFF_CHECKSUM_ENABLE
     else
     {
         error = OT_ERROR_INVALID_ARGS;
@@ -492,11 +564,164 @@ void Ba::HandleBorderAgentEphemeralKeyStateChange(void)
 
 #endif // OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE
 
+#if OPENTHREAD_CONFIG_BORDER_AGENT_ADMITTER_ENABLE
+
+template <> otError Ba::Process<Cmd("admitter")>(Arg aArgs[])
+{
+    otError error = OT_ERROR_NONE;
+
+    /**
+     * @cli ba admitter
+     * @code
+     * ba admitter
+     * Disabled
+     * Done
+     * @endcode
+     * @par api_copy
+     * #otBorderAdmitterIsEnabled
+     */
+    if (aArgs[0].IsEmpty())
+    {
+        OutputEnabledDisabledStatus(otBorderAdmitterIsEnabled(GetInstancePtr()));
+    }
+    /**
+     * @cli ba admitter (enable, disable)
+     * @code
+     * ba admitter enable
+     * Done
+     * @endcode
+     * @code
+     * ba admitter
+     * Enabled
+     * Done
+     * @endcode
+     * @cparam ba admitter @ca{enable|disable}
+     * @par api_copy
+     * #otBorderAdmitterSetEnabled
+     */
+    else if (ProcessEnableDisable(aArgs, otBorderAdmitterSetEnabled) == OT_ERROR_NONE)
+    {
+    }
+    /**
+     * @cli ba admitter state
+     * @code
+     * ba admitter state
+     * enabled: yes
+     * is-prime: yes
+     * is-active-commissioner: yes
+     * is-petition-rejected: no
+     * Done
+     * @endcode
+     * @par
+     * Outputs the state of Border Agent Admitter.
+     * @sa otBorderAdmitterIsEnabled
+     * @sa otBorderAdmitterIsPrimeAdmitter
+     * @sa otBorderAdmitterIsActiveCommissioner
+     * @sa otBorderAdmitterIsPetitionRejected
+     */
+    else if (aArgs[0] == "state")
+    {
+        bool enabled = otBorderAdmitterIsEnabled(GetInstancePtr());
+
+        VerifyOrExit(aArgs[1].IsEmpty(), error = OT_ERROR_INVALID_ARGS);
+
+        OutputLine("enabled: %s", ToYesNo(enabled));
+        VerifyOrExit(enabled);
+        OutputLine("is-prime: %s", ToYesNo(otBorderAdmitterIsPrimeAdmitter(GetInstancePtr())));
+        OutputLine("is-active-commissioner: %s", ToYesNo(otBorderAdmitterIsActiveCommissioner(GetInstancePtr())));
+        OutputLine("is-petition-rejected: %s", ToYesNo(otBorderAdmitterIsPetitionRejected(GetInstancePtr())));
+    }
+    /**
+     * @cli ba admitter joinerudpport (get,set)
+     * @code
+     * ba admitter joinerudpport
+     * 1000
+     * Done
+     * @endcode
+     * @code
+     * ba admitter joinerudpport 1001
+     * Done
+     * @endcode
+     * @cparam ba admitter joinerudpport [@ca{port}]
+     * @par
+     * Gets or sets the Border Agent Admitter Joiner UDP port.
+     * @sa otBorderAdmitterGetJoinerUdpPort
+     * @sa otBorderAdmitterSetJoinerUdpPort
+     */
+    else if (aArgs[0] == "joinerudpport")
+    {
+        error = ProcessGetSet(aArgs + 1, otBorderAdmitterGetJoinerUdpPort, otBorderAdmitterSetJoinerUdpPort);
+    }
+
+    /**
+     * @cli ba admitter enrollers
+     * @code
+     * ba admitter enrollers
+     * Enroller - id: phone01275ABC
+     *     steering-data: [0042008000000000]
+     *     mode: 0xc0
+     *     msec-since-registered: 10478
+     *     Joiner - iid: a5d2e4f0c8b1937e
+     *         msec-since-accepted: 3299
+     *         msec-till-expiration: 418852
+     * Done
+     * @endcode
+     * @par
+     * Outputs the list of enrollers and accepted joiners per enroller.
+     * @sa otBorderAdmitterGetNextEnrollerInfo
+     * @sa otBorderAdmitterGetNextJoinerInfo
+     */
+    else if (aArgs[0] == "enrollers")
+    {
+        otBorderAdmitterIterator     iter;
+        otBorderAdmitterEnrollerInfo enrollerInfo;
+        otBorderAdmitterJoinerInfo   joinerInfo;
+        Uint64StringBuffer           u64String;
+
+        VerifyOrExit(aArgs[1].IsEmpty(), error = OT_ERROR_INVALID_ARGS);
+
+        otBorderAdmitterInitIterator(GetInstancePtr(), &iter);
+
+        while (otBorderAdmitterGetNextEnrollerInfo(&iter, &enrollerInfo) == OT_ERROR_NONE)
+        {
+            OutputLine("Enroller - id: %s", enrollerInfo.mId);
+            OutputFormat(kIndentSize, "steering-data: [");
+            OutputBytes(enrollerInfo.mSteeringData.m8, enrollerInfo.mSteeringData.mLength);
+            OutputLine("]");
+            OutputLine(kIndentSize, "mode: 0x%02x", enrollerInfo.mMode);
+            OutputLine(kIndentSize, "msec-since-registered: %s",
+                       Uint64ToString(enrollerInfo.mRegisterDuration, u64String));
+
+            while (otBorderAdmitterGetNextJoinerInfo(&iter, &joinerInfo) == OT_ERROR_NONE)
+            {
+                OutputFormat(kIndentSize, "Joiner - iid: ");
+                OutputBytesLine(joinerInfo.mIid.mFields.m8, OT_IP6_IID_SIZE);
+
+                OutputLine(kIndentSize * 2, "msec-since-accepted: %s",
+                           Uint64ToString(joinerInfo.mMsecSinceAccept, u64String));
+                OutputLine(kIndentSize * 2, "msec-till-expiration: %lu", ToUlong(joinerInfo.mMsecTillExpiration));
+            }
+        }
+    }
+    else
+    {
+        error = OT_ERROR_INVALID_ARGS;
+    }
+
+exit:
+    return error;
+}
+
+#endif // OPENTHREAD_CONFIG_BORDER_AGENT_ADMITTER_ENABLE
+
 otError Ba::Process(Arg aArgs[])
 {
 #define CmdEntry(aCommandString) {aCommandString, &Ba::Process<Cmd(aCommandString)>}
 
     static constexpr Command kCommands[] = {
+#if OPENTHREAD_CONFIG_BORDER_AGENT_ADMITTER_ENABLE
+        CmdEntry("admitter"),
+#endif
         CmdEntry("counters"),
         CmdEntry("disable"),
         CmdEntry("enable"),
