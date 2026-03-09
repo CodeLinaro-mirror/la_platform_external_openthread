@@ -205,8 +205,8 @@ filegroup {
         "src/core/common/settings.cpp",
         "src/core/common/string.cpp",
         "src/core/common/tasklet.cpp",
-        "src/core/common/timer.cpp",
         "src/core/common/time_ticker.cpp",
+        "src/core/common/timer.cpp",
         "src/core/common/tlvs.cpp",
         "src/core/common/trickle_timer.cpp",
         "src/core/common/uptime.cpp",
@@ -230,8 +230,8 @@ filegroup {
         "src/core/mac/mac_header_ie.cpp",
         "src/core/mac/mac_links.cpp",
         "src/core/mac/mac_types.cpp",
-        "src/core/mac/sub_mac_callbacks.cpp",
         "src/core/mac/sub_mac.cpp",
+        "src/core/mac/sub_mac_callbacks.cpp",
         "src/core/mac/sub_mac_csl_receiver.cpp",
         "src/core/mac/sub_mac_wed.cpp",
         "src/core/mac/wakeup_tx_scheduler.cpp",
@@ -264,13 +264,13 @@ filegroup {
         "src/core/net/dns_client.cpp",
         "src/core/net/dns_dso.cpp",
         "src/core/net/dns_platform.cpp",
+        "src/core/net/dns_types.cpp",
         "src/core/net/dnssd.cpp",
         "src/core/net/dnssd_server.cpp",
-        "src/core/net/dns_types.cpp",
         "src/core/net/icmp6.cpp",
         "src/core/net/ip4_types.cpp",
-        "src/core/net/ip6_address.cpp",
         "src/core/net/ip6.cpp",
+        "src/core/net/ip6_address.cpp",
         "src/core/net/ip6_filter.cpp",
         "src/core/net/ip6_headers.cpp",
         "src/core/net/ip6_mpl.cpp",
@@ -289,8 +289,8 @@ filegroup {
         "src/core/net/tcp6_ext.cpp",
         "src/core/net/udp6.cpp",
         "src/core/radio/ble_secure.cpp",
-        "src/core/radio/radio_callbacks.cpp",
         "src/core/radio/radio.cpp",
+        "src/core/radio/radio_callbacks.cpp",
         "src/core/radio/radio_platform.cpp",
         "src/core/radio/trel_interface.cpp",
         "src/core/radio/trel_link.cpp",
@@ -354,8 +354,8 @@ filegroup {
         "src/core/utils/channel_monitor.cpp",
         "src/core/utils/flash.cpp",
         "src/core/utils/heap.cpp",
-        "src/core/utils/history_tracker_client.cpp",
         "src/core/utils/history_tracker.cpp",
+        "src/core/utils/history_tracker_client.cpp",
         "src/core/utils/history_tracker_server.cpp",
         "src/core/utils/history_tracker_tlvs.cpp",
         "src/core/utils/jam_detector.cpp",
@@ -436,57 +436,6 @@ filegroup {
 }
 
 filegroup {
-    name: "openthread_mbedtls_srcs",
-    srcs: [
-        "third_party/mbedtls/repo/library/aes.c",
-        "third_party/mbedtls/repo/library/asn1parse.c",
-        "third_party/mbedtls/repo/library/asn1write.c",
-        "third_party/mbedtls/repo/library/base64.c",
-        "third_party/mbedtls/repo/library/bignum_core.c",
-        "third_party/mbedtls/repo/library/bignum.c",
-        "third_party/mbedtls/repo/library/ccm.c",
-        "third_party/mbedtls/repo/library/cipher.c",
-        "third_party/mbedtls/repo/library/cipher_wrap.c",
-        "third_party/mbedtls/repo/library/cmac.c",
-        "third_party/mbedtls/repo/library/constant_time.c",
-        "third_party/mbedtls/repo/library/ctr_drbg.c",
-        "third_party/mbedtls/repo/library/debug.c",
-        "third_party/mbedtls/repo/library/ecdh.c",
-        "third_party/mbedtls/repo/library/ecdsa.c",
-        "third_party/mbedtls/repo/library/ecjpake.c",
-        "third_party/mbedtls/repo/library/ecp.c",
-        "third_party/mbedtls/repo/library/ecp_curves.c",
-        "third_party/mbedtls/repo/library/entropy.c",
-        "third_party/mbedtls/repo/library/entropy_poll.c",
-        "third_party/mbedtls/repo/library/hmac_drbg.c",
-        "third_party/mbedtls/repo/library/md.c",
-        "third_party/mbedtls/repo/library/memory_buffer_alloc.c",
-        "third_party/mbedtls/repo/library/oid.c",
-        "third_party/mbedtls/repo/library/pem.c",
-        "third_party/mbedtls/repo/library/pk.c",
-        "third_party/mbedtls/repo/library/pk_ecc.c",
-        "third_party/mbedtls/repo/library/pk_wrap.c",
-        "third_party/mbedtls/repo/library/pkparse.c",
-        "third_party/mbedtls/repo/library/pkwrite.c",
-        "third_party/mbedtls/repo/library/platform.c",
-        "third_party/mbedtls/repo/library/platform_util.c",
-        "third_party/mbedtls/repo/library/sha256.c",
-        "third_party/mbedtls/repo/library/ssl_ciphersuites.c",
-        "third_party/mbedtls/repo/library/ssl_client.c",
-        "third_party/mbedtls/repo/library/ssl_cookie.c",
-        "third_party/mbedtls/repo/library/ssl_msg.c",
-        "third_party/mbedtls/repo/library/ssl_ticket.c",
-        "third_party/mbedtls/repo/library/ssl_tls.c",
-        "third_party/mbedtls/repo/library/ssl_tls12_client.c",
-        "third_party/mbedtls/repo/library/ssl_tls12_server.c",
-        "third_party/mbedtls/repo/library/ssl_tls13_client.c",
-        "third_party/mbedtls/repo/library/threading.c",
-        "third_party/mbedtls/repo/library/x509.c",
-        "third_party/mbedtls/repo/library/x509_crt.c",
-    ],
-}
-
-filegroup {
     name: "openthread_platform_posix_srcs",
     srcs: [
         "src/android/logging.c",
@@ -532,6 +481,8 @@ cc_library_static {
     ],
     generated_headers: ["ot_version_header"],
 
+    header_libs: ["libmbedtls_headers"],
+
     local_include_dirs: [
         "include",
         "src",
@@ -544,7 +495,6 @@ cc_library_static {
         "src/posix/platform/include",
         "third_party",
         "third_party/mbedtls",
-        "third_party/mbedtls/repo/include",
     ],
 
     export_include_dirs: [
@@ -605,6 +555,8 @@ cc_library_static {
     ],
     generated_headers: ["ot_version_header"],
 
+    header_libs: ["libmbedtls_headers"],
+
     local_include_dirs: [
         "include",
         "src",
@@ -614,7 +566,6 @@ cc_library_static {
         "src/posix/platform",
         "src/posix/platform/include",
         "third_party/mbedtls",
-        "third_party/mbedtls/repo/include",
     ],
 
     cflags: [
@@ -682,6 +633,8 @@ cc_defaults {
 cc_defaults {
     name: "ot_simulation_cflags_defaults",
 
+    header_libs: ["libmbedtls_headers"],
+
     local_include_dirs: [
         "examples/platforms/simulation",
         "examples/platforms",
@@ -694,7 +647,6 @@ cc_defaults {
         "src/lib/hdlc",
         "third_party",
         "third_party/mbedtls",
-        "third_party/mbedtls/repo/include",
     ],
 
     export_include_dirs: [
@@ -748,28 +700,8 @@ cc_library_static {
 
     srcs: [
         ":openthread_simulation_srcs",
+        ":openthread_mbedtls_srcs",
         "src/lib/platform/exit_code.c",
-        "third_party/mbedtls/repo/library/aes.c",
-        "third_party/mbedtls/repo/library/asn1parse.c",
-        "third_party/mbedtls/repo/library/asn1write.c",
-        "third_party/mbedtls/repo/library/base64.c",
-        "third_party/mbedtls/repo/library/bignum_core.c",
-        "third_party/mbedtls/repo/library/bignum.c",
-        "third_party/mbedtls/repo/library/ccm.c",
-        "third_party/mbedtls/repo/library/cipher.c",
-        "third_party/mbedtls/repo/library/cipher_wrap.c",
-        "third_party/mbedtls/repo/library/cmac.c",
-        "third_party/mbedtls/repo/library/ctr_drbg.c",
-        "third_party/mbedtls/repo/library/debug.c",
-        "third_party/mbedtls/repo/library/entropy.c",
-        "third_party/mbedtls/repo/library/entropy_poll.c",
-        "third_party/mbedtls/repo/library/hmac_drbg.c",
-        "third_party/mbedtls/repo/library/md.c",
-        "third_party/mbedtls/repo/library/memory_buffer_alloc.c",
-        "third_party/mbedtls/repo/library/oid.c",
-        "third_party/mbedtls/repo/library/platform.c",
-        "third_party/mbedtls/repo/library/platform_util.c",
-        "third_party/mbedtls/repo/library/sha256.c",
     ],
 
     cflags: [
