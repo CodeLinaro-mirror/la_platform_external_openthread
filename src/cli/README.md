@@ -596,6 +596,36 @@ Requires `OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE`.
 Done
 ```
 
+### ba ephemeralkey generate-tap
+
+Generates a cryptographically secure random Thread Administration One-Time Passcode (TAP) string.
+
+Requires `OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE` and `OPENTHREAD_CONFIG_VERHOEFF_CHECKSUM_ENABLE`.
+
+The TAP is a string of 9 characters, generated as a sequence of eight cryptographically secure random numeric digits [`0`-`9`] followed by a single check digit determined using the Verhoeff algorithm.
+
+Note that this command simply generates and outputs a TAP. It does not start ephemeral key use with this TAP on the Border Agent.
+
+```bash
+> ba ephemeralkey generate-tap
+989710128
+Done
+```
+
+### ba ephemeralkey validate-tap \<keystring\>
+
+Validates a given Thread Administration One-Time Passcode (TAP) string.
+
+Requires `OPENTHREAD_CONFIG_BORDER_AGENT_EPHEMERAL_KEY_ENABLE` and `OPENTHREAD_CONFIG_VERHOEFF_CHECKSUM_ENABLE`.
+
+Validates that the TAP string has the proper length, contains digit characters [`0`-`9`], and validates the Verhoeff checksum.
+
+```bash
+> ba ephemeralkey validate-tap 989710128
+validated
+Done
+```
+
 ### ba counters
 
 Get the border agent counter values.
@@ -620,6 +650,67 @@ pskcSecureSessionFailure: 0
 pskcCommissionerPetition: 0
 mgmtActiveGet: 0
 mgmtPendingGet: 0
+Done
+```
+
+### ba admitter
+
+Enables or disables Border Agent Admitter function, or outputs its status.
+
+All `ba admitter` sub-commands requires `OPENTHREAD_CONFIG_BORDER_AGENT_ADMITTER_ENABLE` in addition to `OPENTHREAD_CONFIG_BORDER_AGENT_ENABLE`.
+
+```bash
+> ba admitter
+Disabled
+Done
+
+> ba admitter enable
+Done
+
+> ba admitter
+Enabled
+Done
+```
+
+### ba admitter state
+
+Outputs the state of Border Agent Admitter.
+
+```bash
+> ba admitter state
+enabled: yes
+is-prime: yes
+is-active-commissioner: yes
+is-petition-rejected: no
+Done
+```
+
+### ba admitter joinerudpport
+
+Gets or sets the Border Agent Admitter Joiner UDP port.
+
+```bash
+> ba admitter joinerudpport
+1000
+Done
+
+> ba admitter joinerudpport 1001
+Done
+```
+
+### ba admitter enrollers
+
+Outputs the list of enrollers and accepted joiners per enroller.
+
+```bash
+> ba admitter enrollers
+Enroller - id: phone01275ABC
+    steering-data: [0042008000000000]
+    mode: 0xc0
+    msec-since-registered: 10478
+    Joiner - iid: a5d2e4f0c8b1937e
+        msec-since-accepted: 3299
+        msec-till-expiration: 418852
 Done
 ```
 
@@ -661,7 +752,7 @@ running
 Done
 ```
 
-### batracker agents
+### batracker agents [rawtxt]
 
 Requires `OPENTHREAD_CONFIG_BORDER_AGENT_TRACKER_ENABLE`.
 
@@ -670,13 +761,54 @@ Outputs the list of discovered Border Agents. Information per Agent:
 - Service name
 - Port number
 - Host name
-- TXT data (key/value pairs per line)
+- TXT data (parsed human-readable information, or raw key/value pairs)
 - Host addresses
 - Milliseconds since agent was first discovered
 - Milliseconds since the last change to agent info (port, addresses, TXT data)
 
+By default, if `OPENTHREAD_CONFIG_BORDER_AGENT_TXT_DATA_PARSER_ENABLE` is enabled, the TXT data is parsed and displayed in a human-readable format.
+
+The optional `rawtxt` argument forces the output of TXT data in its raw format (key/value pairs), even when the parser is enabled. If the parser is disabled, the raw format is always used.
+
 ```bash
 > batracker agents
+ServiceName: OTBR-by-Google-a7215b46a4f1fd
+    Port: 49154
+    Host: otbe345eefb12f7f9c
+    TxtData:
+        RecordVersion: 1
+        AgentId: e12f639deb66987e11a7215cd123
+        ThreadVersion: 1.4.0
+        NetworkName: ota7215b46a4f1fd
+        ExtendedPanId: 16dd92d88a32e63f
+        ActiveTimestamp: 1771558107
+        PartitionId: 0x10930b04
+        DomainName: DefaultDomain
+        BbrSeqNum: 23
+        BbrPort: 61631
+        OmrPrefix: fd70:ad65:47d9:1::/64
+        ExtAddress: 8e5d342e265b279c
+        VendorName: Google
+        ModelName: OTBR
+        StateBitmap:
+            ConnMode: pskc
+            ThreadIfState: active
+            Availability: high
+            ThreadRole: leader
+            BbrIsActive: yes
+            BbrIsPrimary: yes
+            EpskcSupported: yes
+            MultiAilState: not-detected
+            AdmitterSupported: yes
+    Address(es):
+        fd7c:af54:fada:4dcc:6aec:8aff:fe0d:e90b
+    MilliSecondsSinceDiscovered: 3523
+    MilliSecondsSinceLastChange: 3523
+Done
+```
+
+```bash
+> batracker agents rawtxt
 ServiceName: OTBR-by-Google-be345eefb12f7f9c
     Port: 49152
     Host: otbe345eefb12f7f9c
@@ -1784,9 +1916,11 @@ Done
 
 Enable/Disable the "DNS name compression" mode.
 
-By default DNS name compression is enabled. When disabled, DNS names are appended as full and never compressed. This is applicable to OpenThread's DNS and SRP client/server modules.
+By default, DNS name compression is enabled. When disabled, DNS names are appended in full and are never compressed. This applies to OpenThread's DNS and SRP client/server modules.
 
-This is intended for testing only and available under `REFERENCE_DEVICE` config.
+DNS name compression cannot be disabled if the OpenThread mDNS module is enabled. Enabling the mDNS module will automatically enable name compression if it was previously disabled. Attempting to disable compression while the mDNS module is active will fail.
+
+This is intended for testing only and requires `OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE`.
 
 Get the current "DNS name compression" mode.
 
