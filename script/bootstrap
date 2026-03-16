@@ -157,7 +157,6 @@ install_packages()
 
 main()
 {
-    git submodule update --init --recursive || true
     install_packages
     echo 'bootstrap completed successfully.'
 }

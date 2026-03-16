@@ -55,7 +55,11 @@ jobs:
 
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
-        submodules: recursive
+        submodules: true
+    - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      with:
+        python-version: '3.12'
+        cache: pip
     - name: Bootstrap
       run: |
         sudo apt-get update
@@ -93,8 +97,6 @@ jobs:
       with:
         egress-policy: audit # TODO: change to 'egress-policy: block' after couple of runs
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      with:
-        submodules: recursive
     - name: Bootstrap
       run: |
         sudo apt-get --no-install-recommends install -y build-essential ninja-build libreadline-dev libncurses-dev
@@ -114,7 +116,7 @@ jobs:
 
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
-        submodules: recursive
+        submodules: true
     - name: Bootstrap
       run: |
         sudo apt-get --no-install-recommends install -y build-essential ninja-build libreadline-dev libncurses-dev
@@ -154,7 +156,7 @@ jobs:
 
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
-        submodules: recursive
+        submodules: true
     - name: Bootstrap
       run: |
         sudo apt-get update
@@ -173,7 +175,7 @@ jobs:
 
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
-        submodules: recursive
+        submodules: true
     - name: Bootstrap
       run: |
         sudo apt-get update
@@ -192,11 +194,16 @@ jobs:
 
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
-        submodules: recursive
+        submodules: true
     - name: Bootstrap
       run: |
         sudo apt-get --no-install-recommends install -y ninja-build libreadline-dev libncurses-dev
-        cd third_party/mbedtls/repo && git fetch --tags && git checkout tags/v2.28.8
+        rm -rf third_party/mbedtls/repo
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      with:
+        repository: ARMmbed/mbedtls
+        ref: v2.28.8
+        path: third_party/mbedtls/repo
     - name: Build
       run: |
         OT_OPTIONS='-DCMAKE_POLICY_VERSION_MINIMUM=3.5' ./script/test build
@@ -246,7 +253,7 @@ jobs:
 
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
-        submodules: recursive
+        submodules: true
     - name: Bootstrap
       run: |
         cd /tmp
@@ -279,7 +286,7 @@ jobs:
 
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
-        submodules: recursive
+        submodules: true
     - name: Bootstrap
       run: |
         sudo apt-get update
@@ -312,7 +319,7 @@ jobs:
 
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          submodules: recursive
+          submodules: true
       - name: Bootstrap
         run: |
           wget https://apt.llvm.org/llvm.sh
@@ -335,7 +342,7 @@ jobs:
 
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
-        submodules: recursive
+        submodules: true
     - name: Bootstrap
       run: |
         sudo apt-get update
@@ -366,7 +373,7 @@ jobs:
 
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
-        submodules: recursive
+        submodules: true
     - name: Bootstrap
       run: |
         brew update
@@ -390,7 +397,7 @@ jobs:
 
     - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
-        submodules: recursive
+        submodules: true
     - name: Install unzip
       run: apt update && apt install -y unzip
     - name: Setup NDK
