@@ -41,15 +41,90 @@ namespace Coap {
 RegisterLogModule("Coap");
 
 //---------------------------------------------------------------------------------------------------------------------
+// Msg
+
+Error Msg::ParseHeaderAndOptions(PayloadMarkerMode aPayloadMarkerMode)
+{
+    // Parses and validates CoAP headers and options. Assumes
+    // `GetHeaderOffset()` points to the header start.
+    // `aPayloadMarkerMode` determines behavior regarding "payload
+    // marker". Either rejects the message if payload marker is present
+    // with no payload (used on a received message), or removes the
+    // payload marker in such a situation (used on a message to be
+    // sent). Upon completion, `GetOffset()` is updated to the start of
+    // the payload.
+
+    Error            error;
+    Option::Iterator iterator;
+    uint16_t         payloadOffset;
+    bool             emptyPayload;
+
+    SuccessOrExit(error = mMessage.ParseHeaderInfo(*this));
+
+    SuccessOrExit(error = iterator.Init(mMessage));
+
+    while (!iterator.IsDone())
+    {
+        SuccessOrExit(error = iterator.Advance());
+    }
+
+    payloadOffset = iterator.GetPayloadMessageOffset();
+    emptyPayload  = (payloadOffset == mMessage.GetLength());
+
+    if (iterator.HasPayloadMarker())
+    {
+        switch (aPayloadMarkerMode)
+        {
+        case kRejectIfNoPayloadWithPayloadMarker:
+            VerifyOrExit(!emptyPayload, error = kErrorParse);
+            break;
+
+        case kRemovePayloadMarkerIfNoPayload:
+            if (emptyPayload)
+            {
+                mMessage.RemoveFooter(sizeof(uint8_t));
+                payloadOffset--;
+            }
+            break;
+        }
+    }
+
+    mMessage.SetOffset(payloadOffset);
+
+exit:
+    return error;
+}
+
+uint16_t Msg::GetHeaderSize(void) const
+{
+    // Determines the size of the CoAP header including the token
+    // but excluding any appended Options.
+
+    return sizeof(Message::Header) + GetToken().GetLength();
+}
+
+void Msg::UpdateType(Type aType)
+{
+    mType = aType;
+    mMessage.WriteType(aType);
+}
+
+void Msg::UpdateMessageId(uint16_t aMessageId)
+{
+    mMessageId = aMessageId;
+    mMessage.WriteMessageId(aMessageId);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
 // CoapBase
 
 CoapBase::CoapBase(Instance &aInstance, Sender aSender)
     : InstanceLocator(aInstance)
-    , mMessageId(Random::NonCrypto::GetUint16())
-    , mRetransmissionTimer(aInstance, Coap::HandleRetransmissionTimer, this)
+    , mPendingRequests(aInstance, *this)
     , mResponseCache(aInstance)
     , mResourceHandler(nullptr)
     , mSender(aSender)
+    , mMessageId(Random::NonCrypto::GetUint16())
 #if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
     , mLastResponse(nullptr)
 #endif
@@ -58,26 +133,8 @@ CoapBase::CoapBase(Instance &aInstance, Sender aSender)
 
 void CoapBase::ClearAllRequestsAndResponses(void)
 {
-    ClearRequests(nullptr); // Clear requests matching any address.
+    mPendingRequests.AbortAllRequests();
     mResponseCache.RemoveAll();
-    mRetransmissionTimer.Stop();
-}
-
-void CoapBase::ClearRequests(const Ip6::Address &aAddress) { ClearRequests(&aAddress); }
-
-void CoapBase::ClearRequests(const Ip6::Address *aAddress)
-{
-    for (Message &message : mPendingRequests)
-    {
-        Metadata metadata;
-
-        metadata.ReadFrom(message);
-
-        if ((aAddress == nullptr) || (metadata.mSourceAddress == *aAddress))
-        {
-            FinalizeCoapTransaction(message, metadata, nullptr, nullptr, kErrorAbort);
-        }
-    }
 }
 
 void CoapBase::AddResource(Resource &aResource) { IgnoreError(mResources.Add(aResource)); }
@@ -137,7 +194,7 @@ Message *CoapBase::InitMessage(Message *aMessage, Type aType, Uri aUri)
     VerifyOrExit(aMessage != nullptr);
 
     SuccessOrExit(error = aMessage->Init(aType, kCodePost, aUri));
-    SuccessOrExit(error = aMessage->SetPayloadMarker());
+    SuccessOrExit(error = aMessage->AppendPayloadMarker());
 
 exit:
     FreeAndNullMessageOnError(aMessage, error);
@@ -150,8 +207,8 @@ Message *CoapBase::InitResponse(Message *aMessage, const Message &aRequest)
 
     VerifyOrExit(aMessage != nullptr);
 
-    SuccessOrExit(error = aMessage->SetDefaultResponseHeader(aRequest));
-    SuccessOrExit(error = aMessage->SetPayloadMarker());
+    SuccessOrExit(error = aMessage->InitAsResponse(kTypeAck, kCodeChanged, aRequest));
+    SuccessOrExit(error = aMessage->AppendPayloadMarker());
 
 exit:
     FreeAndNullMessageOnError(aMessage, error);
@@ -177,26 +234,19 @@ Error CoapBase::Send(ot::Message &aMessage, const Ip6::MessageInfo &aMessageInfo
     return error;
 }
 
-#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
 Error CoapBase::SendMessage(Message                &aMessage,
                             const Ip6::MessageInfo &aMessageInfo,
                             const TxParameters     *aTxParameters,
-                            ResponseHandler         aHandler,
-                            void                   *aContext,
-                            BlockwiseTransmitHook   aTransmitHook,
-                            BlockwiseReceiveHook    aReceiveHook)
-#else
-Error CoapBase::SendMessage(Message                &aMessage,
-                            const Ip6::MessageInfo &aMessageInfo,
-                            const TxParameters     *aTxParameters,
-                            ResponseHandler         aHandler,
-                            void                   *aContext)
-#endif
+                            const SendCallbacks    &aCallbacks)
 {
     Error    error;
-    Message *storedCopy = nullptr;
+    Request  request;
     uint16_t copyLength = 0;
-    Metadata metadata;
+    Msg      txMsg(aMessage, aMessageInfo);
+
+    request.Clear();
+
+    SuccessOrExit(error = txMsg.ParseHeaderAndOptions(Msg::kRemovePayloadMarkerIfNoPayload));
 
     if (aTxParameters == nullptr)
     {
@@ -204,130 +254,101 @@ Error CoapBase::SendMessage(Message                &aMessage,
     }
     else
     {
-        SuccessOrExit(error = aTxParameters->ValidateFor(aMessage));
+        SuccessOrExit(error = aTxParameters->ValidateFor(txMsg));
     }
 
 #if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
-    metadata.mBlockwiseReceiveHook  = aReceiveHook;
-    metadata.mBlockwiseTransmitHook = aTransmitHook;
-
-    SuccessOrExit(error = ProcessBlockwiseSend(aMessage, aTransmitHook, aContext));
+    SuccessOrExit(error = ProcessBlockwiseSend(txMsg, aCallbacks));
 #endif
 
-    switch (aMessage.GetType())
+    switch (txMsg.GetType())
     {
     case kTypeAck:
-        mResponseCache.Add(aMessage, aMessageInfo, aTxParameters->CalculateExchangeLifetime());
+        mResponseCache.Add(txMsg, aTxParameters->CalculateExchangeLifetime());
         break;
     case kTypeReset:
-        OT_ASSERT(aMessage.GetCode() == kCodeEmpty);
+        OT_ASSERT(txMsg.GetCode() == kCodeEmpty);
         break;
     default:
-        aMessage.SetMessageId(mMessageId++);
+        txMsg.UpdateMessageId(mMessageId++);
         break;
     }
 
-    aMessage.Finish();
-
-    if (aMessage.IsConfirmable())
+    if (txMsg.IsConfirmable())
     {
-        copyLength = aMessage.GetLength();
+        copyLength = txMsg.mMessage.GetLength();
     }
-    else if (aMessage.IsNonConfirmable() && (aHandler != nullptr))
+    else if (txMsg.IsNonConfirmable() && aCallbacks.HasResponseHandler())
     {
         // As we do not retransmit non confirmable messages, create a
         // copy of header only, for token information.
-        copyLength = aMessage.GetOptionStart();
+        copyLength = txMsg.GetHeaderSize();
     }
 
     if (copyLength > 0)
     {
+        request.mMetadata.Init(txMsg, *aTxParameters, aCallbacks);
+
 #if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
-        // Whether or not to turn on special "Observe" handling.
-        Option::Iterator iterator;
-        bool             observe;
-
-        SuccessOrExit(error = iterator.Init(aMessage, kOptionObserve));
-        observe = !iterator.IsDone();
-
-        // Special case, if we're sending a GET with Observe=1, that is a cancellation.
-        if (observe && aMessage.IsGetRequest())
-        {
-            uint64_t observeVal = 0;
-
-            SuccessOrExit(error = iterator.ReadOptionValue(observeVal));
-
-            if (observeVal == 1)
-            {
-                Metadata handlerMetadata;
-
-                // We're cancelling our subscription, so disable special-case handling on this request.
-                observe = false;
-
-                // If we can find the previous handler context, cancel that too.  Peer address
-                // and tokens, etc should all match.
-                Message *origRequest = FindRelatedRequest(aMessage, aMessageInfo, handlerMetadata);
-                if (origRequest != nullptr)
-                {
-                    FinalizeCoapTransaction(*origRequest, handlerMetadata, nullptr, nullptr, kErrorNone);
-                }
-            }
-        }
-#endif // OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
-
-        metadata.mSourceAddress            = aMessageInfo.GetSockAddr();
-        metadata.mDestinationPort          = aMessageInfo.GetPeerPort();
-        metadata.mDestinationAddress       = aMessageInfo.GetPeerAddr();
-        metadata.mMulticastLoop            = aMessageInfo.GetMulticastLoop();
-        metadata.mResponseHandler          = aHandler;
-        metadata.mResponseContext          = aContext;
-        metadata.mRetransmissionsRemaining = aTxParameters->mMaxRetransmit;
-        metadata.mRetransmissionTimeout    = aTxParameters->CalculateInitialRetransmissionTimeout();
-        metadata.mAcknowledged             = false;
-        metadata.mConfirmable              = aMessage.IsConfirmable();
-#if OPENTHREAD_CONFIG_BACKBONE_ROUTER_ENABLE
-        metadata.mHopLimit        = aMessageInfo.GetHopLimit();
-        metadata.mIsHostInterface = aMessageInfo.IsHostInterface();
+        SuccessOrExit(error = ProcessObserveSend(txMsg, request));
 #endif
-#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
-        metadata.mObserve = observe;
-#endif
-        metadata.mNextTimerShot =
-            TimerMilli::GetNow() +
-            (metadata.mConfirmable ? metadata.mRetransmissionTimeout : aTxParameters->CalculateMaxTransmitWait());
 
-        storedCopy = CopyAndEnqueueMessage(aMessage, copyLength, metadata);
-        VerifyOrExit(storedCopy != nullptr, error = kErrorNoBufs);
+        SuccessOrExit(error = mPendingRequests.AddClone(txMsg.mMessage, copyLength, request));
     }
 
-    SuccessOrExit(error = Send(aMessage, aMessageInfo));
+    SuccessOrExit(error = Send(txMsg.mMessage, txMsg.mMessageInfo));
 
 exit:
 
-    if (error != kErrorNone && storedCopy != nullptr)
+    if (error != kErrorNone)
     {
-        DequeueMessage(*storedCopy);
+        mPendingRequests.Remove(request);
     }
 
     return error;
 }
 
+Error CoapBase::SendMessage(Message                &aMessage,
+                            const Ip6::MessageInfo &aMessageInfo,
+                            const TxParameters     *aTxParameters,
+                            ResponseHandler         aHandler,
+                            void                   *aContext)
+{
+    SendCallbacks callbacks;
+
+    callbacks.Clear();
+    callbacks.mResponseHandler = aHandler;
+    callbacks.mContext         = aContext;
+
+    return SendMessage(aMessage, aMessageInfo, aTxParameters, callbacks);
+}
+
 Error CoapBase::SendMessage(Message &aMessage, const Ip6::MessageInfo &aMessageInfo, const TxParameters &aTxParameters)
 {
-    return SendMessage(aMessage, aMessageInfo, &aTxParameters, nullptr, nullptr);
+    SendCallbacks callbacks;
+
+    callbacks.Clear();
+
+    return SendMessage(aMessage, aMessageInfo, &aTxParameters, callbacks);
 }
 
 Error CoapBase::SendMessage(Message                &aMessage,
                             const Ip6::MessageInfo &aMessageInfo,
-                            ResponseHandler         aHandler,
+                            const ResponseHandler   aHandler,
                             void                   *aContext)
 {
-    return SendMessage(aMessage, aMessageInfo, nullptr, aHandler, aContext);
+    SendCallbacks callbacks;
+
+    callbacks.Clear();
+    callbacks.mContext         = aContext;
+    callbacks.mResponseHandler = aHandler;
+
+    return SendMessage(aMessage, aMessageInfo, /* aTxParameters */ nullptr, callbacks);
 }
 
 Error CoapBase::SendMessage(OwnedPtr<Message>       aMessage,
                             const Ip6::MessageInfo &aMessageInfo,
-                            ResponseHandler         aHandler,
+                            const ResponseHandler   aHandler,
                             void                   *aContext)
 {
     Error error;
@@ -359,197 +380,93 @@ exit:
     return error;
 }
 
-Error CoapBase::SendReset(Message &aRequest, const Ip6::MessageInfo &aMessageInfo)
+Error CoapBase::SendMessageWithResponseHandlerSeparateParams(Message                      &aMessage,
+                                                             const Ip6::MessageInfo       &aMessageInfo,
+                                                             const TxParameters           *aTxParameters,
+                                                             ResponseHandlerSeparateParams aHandler,
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+                                                             BlockwiseTransmitHook aTransmitHook,
+                                                             BlockwiseReceiveHook  aReceiveHook,
+#endif
+                                                             void *aContext)
 {
-    return SendEmptyMessage(kTypeReset, aRequest, aMessageInfo);
+    SendCallbacks callbacks;
+
+    callbacks.Clear();
+    callbacks.mResponseHandlerSeparateParams = aHandler;
+    callbacks.mContext                       = aContext;
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+    callbacks.mBlockwiseTransmitHook = aTransmitHook;
+    callbacks.mBlockwiseReceiveHook  = aReceiveHook;
+#endif
+
+    return SendMessage(aMessage, aMessageInfo, aTxParameters, callbacks);
 }
 
-Error CoapBase::SendAck(const Message &aRequest, const Ip6::MessageInfo &aMessageInfo)
+Error CoapBase::SendReset(const Msg &aRxMsg) { return SendEmptyMessage(kTypeReset, aRxMsg); }
+
+Error CoapBase::SendAck(const Msg &aRxMsg) { return SendEmptyMessage(kTypeAck, aRxMsg); }
+
+Error CoapBase::SendEmptyAck(const Msg &aRxMsg, Code aCode)
 {
-    return SendEmptyMessage(kTypeAck, aRequest, aMessageInfo);
+    return (aRxMsg.IsConfirmable() ? SendHeaderResponse(aCode, aRxMsg) : kErrorInvalidArgs);
 }
 
-Error CoapBase::SendEmptyAck(const Message &aRequest, const Ip6::MessageInfo &aMessageInfo, Code aCode)
-{
-    return (aRequest.IsConfirmable() ? SendHeaderResponse(aCode, aRequest, aMessageInfo) : kErrorInvalidArgs);
-}
+Error CoapBase::SendEmptyAck(const Msg &aRxMsg) { return SendEmptyAck(aRxMsg, kCodeChanged); }
 
-Error CoapBase::SendEmptyAck(const Message &aRequest, const Ip6::MessageInfo &aMessageInfo)
-{
-    return SendEmptyAck(aRequest, aMessageInfo, kCodeChanged);
-}
+Error CoapBase::SendNotFound(const Msg &aRxMsg) { return SendHeaderResponse(kCodeNotFound, aRxMsg); }
 
-Error CoapBase::SendNotFound(const Message &aRequest, const Ip6::MessageInfo &aMessageInfo)
-{
-    return SendHeaderResponse(kCodeNotFound, aRequest, aMessageInfo);
-}
-
-Error CoapBase::SendEmptyMessage(Type aType, const Message &aRequest, const Ip6::MessageInfo &aMessageInfo)
+Error CoapBase::SendEmptyMessage(Type aType, const Msg &aRxMsg)
 {
     Error    error   = kErrorNone;
     Message *message = nullptr;
 
-    VerifyOrExit(aRequest.IsConfirmable(), error = kErrorInvalidArgs);
+    VerifyOrExit(aRxMsg.IsConfirmable(), error = kErrorInvalidArgs);
 
     VerifyOrExit((message = NewMessage()) != nullptr, error = kErrorNoBufs);
 
-    message->Init(aType, kCodeEmpty);
-    message->SetMessageId(aRequest.GetMessageId());
-
-    message->Finish();
-    SuccessOrExit(error = Send(*message, aMessageInfo));
+    SuccessOrExit(error = message->Init(aType, kCodeEmpty, aRxMsg.GetMessageId()));
+    SuccessOrExit(error = Send(*message, aRxMsg.mMessageInfo));
 
 exit:
     FreeMessageOnError(message, error);
     return error;
 }
 
-Error CoapBase::SendHeaderResponse(Message::Code aCode, const Message &aRequest, const Ip6::MessageInfo &aMessageInfo)
+Error CoapBase::SendHeaderResponse(Message::Code aCode, const Msg &aRxMsg)
 {
     Error    error   = kErrorNone;
     Message *message = nullptr;
 
-    VerifyOrExit(aRequest.IsRequest(), error = kErrorInvalidArgs);
+    VerifyOrExit(aRxMsg.IsRequest(), error = kErrorInvalidArgs);
     VerifyOrExit((message = NewMessage()) != nullptr, error = kErrorNoBufs);
 
-    switch (aRequest.GetType())
+    switch (aRxMsg.GetType())
     {
     case kTypeConfirmable:
-        message->Init(kTypeAck, aCode);
-        message->SetMessageId(aRequest.GetMessageId());
+        SuccessOrExit(error = message->Init(kTypeAck, aCode, aRxMsg.GetMessageId()));
         break;
 
     case kTypeNonConfirmable:
-        message->Init(kTypeNonConfirmable, aCode);
+        SuccessOrExit(error = message->Init(kTypeNonConfirmable, aCode));
         break;
 
     default:
         ExitNow(error = kErrorInvalidArgs);
     }
 
-    SuccessOrExit(error = message->SetTokenFromMessage(aRequest));
+    SuccessOrExit(error = message->WriteTokenFromMessage(aRxMsg.mMessage));
 
-    SuccessOrExit(error = SendMessage(*message, aMessageInfo));
+    SuccessOrExit(error = SendMessage(*message, aRxMsg.mMessageInfo));
 
 exit:
     FreeMessageOnError(message, error);
     return error;
 }
 
-void CoapBase::ScheduleRetransmissionTimer(void)
-{
-    NextFireTime nextTime;
-    Metadata     metadata;
-
-    for (const Message &message : mPendingRequests)
-    {
-        metadata.ReadFrom(message);
-
-#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
-        if (message.IsRequest() && metadata.mObserve && metadata.mAcknowledged)
-        {
-            // This is an RFC7641 subscription which is already acknowledged.
-            // We do not time it out, so skip it when determining the next
-            // fire time.
-            continue;
-        }
-#endif
-
-        nextTime.UpdateIfEarlier(metadata.mNextTimerShot);
-    }
-
-    mRetransmissionTimer.FireAt(nextTime);
-}
-
-void CoapBase::HandleRetransmissionTimer(Timer &aTimer)
-{
-    static_cast<Coap *>(static_cast<TimerMilliContext &>(aTimer).GetContext())->HandleRetransmissionTimer();
-}
-
-void CoapBase::HandleRetransmissionTimer(void)
-{
-    TimeMilli        now = TimerMilli::GetNow();
-    Metadata         metadata;
-    Ip6::MessageInfo messageInfo;
-
-    for (Message &message : mPendingRequests)
-    {
-        metadata.ReadFrom(message);
-
-        if (now >= metadata.mNextTimerShot)
-        {
-#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
-            if (message.IsRequest() && metadata.mObserve && metadata.mAcknowledged)
-            {
-                // This is a RFC7641 subscription.  Do not time out.
-                continue;
-            }
-#endif
-
-            if (!metadata.mConfirmable || (metadata.mRetransmissionsRemaining == 0))
-            {
-                // No expected response or acknowledgment.
-                FinalizeCoapTransaction(message, metadata, nullptr, nullptr, kErrorResponseTimeout);
-                continue;
-            }
-
-            // Increment retransmission counter and timer.
-            metadata.mRetransmissionsRemaining--;
-            metadata.mRetransmissionTimeout *= 2;
-            metadata.mNextTimerShot = now + metadata.mRetransmissionTimeout;
-            metadata.UpdateIn(message);
-
-            // Retransmit
-            if (!metadata.mAcknowledged)
-            {
-                messageInfo.SetPeerAddr(metadata.mDestinationAddress);
-                messageInfo.SetPeerPort(metadata.mDestinationPort);
-                messageInfo.SetSockAddr(metadata.mSourceAddress);
-#if OPENTHREAD_CONFIG_BACKBONE_ROUTER_ENABLE
-                messageInfo.SetHopLimit(metadata.mHopLimit);
-                messageInfo.SetIsHostInterface(metadata.mIsHostInterface);
-#endif
-                messageInfo.SetMulticastLoop(metadata.mMulticastLoop);
-
-                SendCopy(message, messageInfo);
-            }
-        }
-    }
-
-    ScheduleRetransmissionTimer();
-}
-
-void CoapBase::FinalizeCoapTransaction(Message                &aRequest,
-                                       const Metadata         &aMetadata,
-                                       Message                *aResponse,
-                                       const Ip6::MessageInfo *aMessageInfo,
-                                       Error                   aResult)
-{
-    DequeueMessage(aRequest);
-
-    if (aMetadata.mResponseHandler != nullptr)
-    {
-        aMetadata.mResponseHandler(aMetadata.mResponseContext, aResponse, aMessageInfo, aResult);
-    }
-}
-
 Error CoapBase::AbortTransaction(ResponseHandler aHandler, void *aContext)
 {
-    Error    error = kErrorNotFound;
-    Metadata metadata;
-
-    for (Message &message : mPendingRequests)
-    {
-        metadata.ReadFrom(message);
-
-        if (metadata.mResponseHandler == aHandler && metadata.mResponseContext == aContext)
-        {
-            FinalizeCoapTransaction(message, metadata, nullptr, nullptr, kErrorAbort);
-            error = kErrorNone;
-        }
-    }
-
-    return error;
+    return mPendingRequests.AbortRequestsMatching(aHandler, aContext);
 }
 
 void CoapBase::GetRequestAndCachedResponsesQueueInfo(MessageQueue::Info &aQueueInfo) const
@@ -561,289 +478,141 @@ void CoapBase::GetRequestAndCachedResponsesQueueInfo(MessageQueue::Info &aQueueI
     MessageQueue::AddQueueInfos(aQueueInfo, info);
 }
 
-Message *CoapBase::CopyAndEnqueueMessage(const Message &aMessage, uint16_t aCopyLength, const Metadata &aMetadata)
-{
-    Error    error       = kErrorNone;
-    Message *messageCopy = nullptr;
-
-    VerifyOrExit((messageCopy = aMessage.Clone(aCopyLength)) != nullptr, error = kErrorNoBufs);
-
-    SuccessOrExit(error = aMetadata.AppendTo(*messageCopy));
-
-    mPendingRequests.Enqueue(*messageCopy);
-    ScheduleRetransmissionTimer();
-
-exit:
-    FreeAndNullMessageOnError(messageCopy, error);
-    return messageCopy;
-}
-
-void CoapBase::DequeueMessage(Message &aMessage)
-{
-    mPendingRequests.DequeueAndFree(aMessage);
-    ScheduleRetransmissionTimer();
-}
-
-void CoapBase::SendCopy(const Message &aMessage, const Ip6::MessageInfo &aMessageInfo)
-{
-    Error    error;
-    Message *messageCopy = nullptr;
-
-    // Create a message copy for lower layers.
-    messageCopy = aMessage.Clone(aMessage.GetLength() - sizeof(Metadata));
-    VerifyOrExit(messageCopy != nullptr, error = kErrorNoBufs);
-
-    SuccessOrExit(error = Send(*messageCopy, aMessageInfo));
-
-exit:
-
-    if (error != kErrorNone)
-    {
-        LogWarn("Failed to send copy: %s", ErrorToString(error));
-        FreeMessage(messageCopy);
-    }
-}
-
-Message *CoapBase::FindRelatedRequest(const Message          &aResponse,
-                                      const Ip6::MessageInfo &aMessageInfo,
-                                      Metadata               &aMetadata)
-{
-    Message *request = nullptr;
-
-    for (Message &message : mPendingRequests)
-    {
-        aMetadata.ReadFrom(message);
-
-        if (((aMetadata.mDestinationAddress == aMessageInfo.GetPeerAddr() &&
-              aMetadata.mDestinationPort == aMessageInfo.GetPeerPort()) ||
-             aMetadata.mDestinationAddress.IsMulticast() || aMetadata.mDestinationAddress.GetIid().IsAnycastLocator()))
-        {
-            switch (aResponse.GetType())
-            {
-            case kTypeReset:
-            case kTypeAck:
-                if (aResponse.GetMessageId() == message.GetMessageId())
-                {
-                    request = &message;
-                    ExitNow();
-                }
-
-                break;
-
-            case kTypeConfirmable:
-            case kTypeNonConfirmable:
-                if (aResponse.IsTokenEqual(message))
-                {
-                    request = &message;
-                    ExitNow();
-                }
-
-                break;
-            }
-        }
-    }
-
-exit:
-    return request;
-}
-
 void CoapBase::Receive(ot::Message &aMessage, const Ip6::MessageInfo &aMessageInfo)
 {
-    Message &message = AsCoapMessage(&aMessage);
+    Msg rxMsg(AsCoapMessage(&aMessage), aMessageInfo);
 
-    if (message.ParseHeader() != kErrorNone)
+    rxMsg.mMessage.SetHeaderOffset(rxMsg.mMessage.GetOffset());
+
+    if (rxMsg.ParseHeaderAndOptions(Msg::kRejectIfNoPayloadWithPayloadMarker) != kErrorNone)
     {
         LogDebg("Failed to parse CoAP header");
 
-        if (!aMessageInfo.GetSockAddr().IsMulticast() && message.IsConfirmable())
+        if (!aMessageInfo.GetSockAddr().IsMulticast() && rxMsg.IsConfirmable())
         {
-            IgnoreError(SendReset(message, aMessageInfo));
+            IgnoreError(SendReset(rxMsg));
         }
     }
-    else if (message.IsRequest())
+    else if (rxMsg.IsRequest())
     {
-        ProcessReceivedRequest(message, aMessageInfo);
+        ProcessReceivedRequest(rxMsg);
     }
     else
     {
-        ProcessReceivedResponse(message, aMessageInfo);
+        ProcessReceivedResponse(rxMsg);
     }
 
 #if OPENTHREAD_CONFIG_OTNS_ENABLE
-    Get<Utils::Otns>().EmitCoapReceive(message, aMessageInfo);
+    Get<Utils::Otns>().EmitCoapReceive(rxMsg.mMessage, aMessageInfo);
 #endif
 }
 
-void CoapBase::ProcessReceivedResponse(Message &aMessage, const Ip6::MessageInfo &aMessageInfo)
+void CoapBase::ProcessReceivedResponse(Msg &aRxMsg)
 {
-    Metadata metadata;
-    Message *request = nullptr;
-    Error    error   = kErrorNone;
+    Error   error;
+    Request request;
 #if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
-    bool responseObserve = false;
-#endif
-#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
-    uint8_t  blockOptionType   = 0;
-    uint32_t totalTransferSize = 0;
+    bool shouldObserve = false;
 #endif
 
-    request = FindRelatedRequest(aMessage, aMessageInfo, metadata);
-    VerifyOrExit(request != nullptr);
+    error = mPendingRequests.FindRelatedRequest(aRxMsg, request);
 
-#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
-    if (metadata.mObserve && request->IsRequest())
+    if (error != kErrorNone)
     {
-        // We sent Observe in our request, see if we received Observe in the response too.
+        bool didHandle = InvokeResponseFallback(aRxMsg);
+
+        if (!didHandle && aRxMsg.RequireResetOnError())
+        {
+            // Successfully parsed a header but no matching request was
+            // found - reject the message by sending reset.
+            IgnoreError(SendReset(aRxMsg));
+        }
+
+        ExitNow();
+    }
+
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+    // If there's an Observe option present in both request and
+    // response, and we have a response handler; then we're dealing
+    // with RFC7641 rules here. If there is no response handler, then
+    // we're wasting our time!
+    if (request.mMetadata.mObserve && request.mMetadata.mIsRequest && request.mMetadata.mCallbacks.HasResponseHandler())
+    {
         Option::Iterator iterator;
 
-        SuccessOrExit(error = iterator.Init(aMessage, kOptionObserve));
-        responseObserve = !iterator.IsDone();
+        SuccessOrExit(error = iterator.Init(aRxMsg.mMessage, kOptionObserve));
+        shouldObserve = !iterator.IsDone();
     }
 #endif
 
-    switch (aMessage.GetType())
+    switch (aRxMsg.GetType())
     {
     case kTypeReset:
-        if (aMessage.IsEmpty())
+        if (aRxMsg.IsEmpty())
         {
-            FinalizeCoapTransaction(*request, metadata, nullptr, nullptr, kErrorAbort);
+            mPendingRequests.FinalizeRequest(request, kErrorAbort);
         }
 
         // Silently ignore non-empty reset messages (RFC 7252, Section 4.2).
         break;
 
     case kTypeAck:
-        if (aMessage.IsEmpty())
+        if (aRxMsg.IsEmpty())
         {
             // Empty acknowledgment.
+
 #if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
-            if (metadata.mObserve && !request->IsRequest())
+            if (request.mMetadata.mObserve && !request.mMetadata.mIsRequest)
             {
-                // This is the ACK to our RFC7641 CON notification.  There will be no
-                // "separate" response so pass it back as if it were a piggy-backed
-                // response so we can stop re-sending and the application can move on.
-                FinalizeCoapTransaction(*request, metadata, &aMessage, &aMessageInfo, kErrorNone);
+                // This is the ACK to our RFC7641 CON notification.
+                // There will be no "separate" response so pass it back
+                // as if it were a piggy-backed response so we can stop
+                // re-sending and the application can move on.
+
+                mPendingRequests.FinalizeRequest(request, kErrorNone, &aRxMsg);
             }
             else
 #endif
             {
                 // This is not related to RFC7641 or the outgoing "request" was not a
                 // notification.
-                if (metadata.mConfirmable)
+                if (request.mMetadata.mConfirmable)
                 {
-                    metadata.mAcknowledged = true;
-                    metadata.UpdateIn(*request);
+                    request.mMetadata.mAcknowledged = true;
+                    request.WriteMetadataInMessage();
                 }
 
                 // Remove the message if response is not expected, otherwise await
                 // response.
-                if (metadata.mResponseHandler == nullptr)
+                if (!request.mMetadata.mCallbacks.HasResponseHandler())
                 {
-                    DequeueMessage(*request);
+                    mPendingRequests.Remove(request);
                 }
             }
         }
-        else if (aMessage.IsResponse() && aMessage.IsTokenEqual(*request))
+        else if (aRxMsg.IsResponse() && aRxMsg.mMessage.HasSameTokenAs(*request.mMessage))
         {
-            // Piggybacked response.  If there's an Observe option present in both
-            // request and response, and we have a response handler; then we're
-            // dealing with RFC7641 rules here.
-            // (If there is no response handler, then we're wasting our time!)
+            // Piggybacked response.
+
 #if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
-            if (metadata.mObserve && responseObserve && (metadata.mResponseHandler != nullptr))
+            if (shouldObserve)
             {
                 // This is a RFC7641 notification.  The request is *not* done!
-                metadata.mResponseHandler(metadata.mResponseContext, &aMessage, &aMessageInfo, kErrorNone);
+                request.mMetadata.mCallbacks.InvokeResponseHandler(&aRxMsg, kErrorNone);
 
                 // Consider the message acknowledged at this point.
-                metadata.mAcknowledged = true;
-                metadata.UpdateIn(*request);
+                request.mMetadata.mAcknowledged = true;
+                request.WriteMetadataInMessage();
             }
             else
 #endif
+            {
 #if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
-            {
-                if (metadata.mBlockwiseTransmitHook != nullptr || metadata.mBlockwiseReceiveHook != nullptr)
-                {
-                    // Search for CoAP Block-Wise Option [RFC7959]
-                    Option::Iterator iterator;
-
-                    SuccessOrExit(error = iterator.Init(aMessage));
-                    while (!iterator.IsDone())
-                    {
-                        switch (iterator.GetOption()->GetNumber())
-                        {
-                        case kOptionBlock1:
-                            blockOptionType += 1;
-                            break;
-
-                        case kOptionBlock2:
-                            blockOptionType += 2;
-                            break;
-
-                        case kOptionSize2:
-                            // ToDo: wait for method to read uint option values
-                            totalTransferSize = 0;
-                            break;
-
-                        default:
-                            break;
-                        }
-
-                        SuccessOrExit(error = iterator.Advance());
-                    }
-                }
-                switch (blockOptionType)
-                {
-                case 0:
-                    // Piggybacked response.
-                    FinalizeCoapTransaction(*request, metadata, &aMessage, &aMessageInfo, kErrorNone);
-                    break;
-                case 1: // Block1 option
-                    if (aMessage.GetCode() == kCodeContinue && metadata.mBlockwiseTransmitHook != nullptr)
-                    {
-                        error = SendNextBlock1Request(*request, aMessage, aMessageInfo, metadata);
-                    }
-
-                    if (aMessage.GetCode() != kCodeContinue || metadata.mBlockwiseTransmitHook == nullptr ||
-                        error != kErrorNone)
-                    {
-                        FinalizeCoapTransaction(*request, metadata, &aMessage, &aMessageInfo, error);
-                    }
-                    break;
-                case 2: // Block2 option
-                    if (aMessage.GetCode() < kCodeBadRequest && metadata.mBlockwiseReceiveHook != nullptr)
-                    {
-                        error =
-                            SendNextBlock2Request(*request, aMessage, aMessageInfo, metadata, totalTransferSize, false);
-                    }
-
-                    if (aMessage.GetCode() >= kCodeBadRequest || metadata.mBlockwiseReceiveHook == nullptr ||
-                        error != kErrorNone)
-                    {
-                        FinalizeCoapTransaction(*request, metadata, &aMessage, &aMessageInfo, error);
-                    }
-                    break;
-                case 3: // Block1 & Block2 option
-                    if (aMessage.GetCode() < kCodeBadRequest && metadata.mBlockwiseReceiveHook != nullptr)
-                    {
-                        error =
-                            SendNextBlock2Request(*request, aMessage, aMessageInfo, metadata, totalTransferSize, true);
-                    }
-
-                    FinalizeCoapTransaction(*request, metadata, &aMessage, &aMessageInfo, error);
-                    break;
-                default:
-                    error = kErrorAbort;
-                    FinalizeCoapTransaction(*request, metadata, &aMessage, &aMessageInfo, error);
-                    break;
-                }
+                SuccessOrExit(error = ProcessBlockwiseResponse(aRxMsg, request));
+#else
+                mPendingRequests.FinalizeRequest(request, kErrorNone, &aRxMsg);
+#endif
             }
-#else  // OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
-            {
-                FinalizeCoapTransaction(*request, metadata, &aMessage, &aMessageInfo, kErrorNone);
-            }
-#endif // OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
         }
 
         // Silently ignore acknowledgments carrying requests (RFC 7252, p. 4.2)
@@ -852,87 +621,79 @@ void CoapBase::ProcessReceivedResponse(Message &aMessage, const Ip6::MessageInfo
 
     case kTypeConfirmable:
         // Send empty ACK if it is a CON message.
-        IgnoreError(SendAck(aMessage, aMessageInfo));
+        IgnoreError(SendAck(aRxMsg));
+
+        // Handling of RFC7641 and multicast is below.
 
         OT_FALL_THROUGH;
-        // Handling of RFC7641 and multicast is below.
+
     case kTypeNonConfirmable:
-        // Separate response or observation notification.  If the request was to a multicast
-        // address, OR both the request and response carry Observe options, then this is NOT
-        // the final message, we may see multiples.
-        if ((metadata.mResponseHandler != nullptr) && (metadata.mDestinationAddress.IsMulticast()
-#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
-                                                       || (metadata.mObserve && responseObserve)
-#endif
-                                                           ))
-        {
-            metadata.mResponseHandler(metadata.mResponseContext, &aMessage, &aMessageInfo, kErrorNone);
 
 #if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
-            // When any Observe response is seen, consider a NON observe request "acknowledged" at this point.
-            // This will keep the Observe request active indefinitely until it is canceled.
-            if (metadata.mObserve && !metadata.mConfirmable && responseObserve)
+        if (shouldObserve)
+        {
+            request.mMetadata.mCallbacks.InvokeResponseHandler(&aRxMsg, kErrorNone);
+
+            // When any Observe response is seen, consider a NON observe
+            // request "acknowledged" at this point. This will keep the
+            // Observe request active indefinitely until it is
+            // canceled.
+
+            if (!request.mMetadata.mConfirmable)
             {
-                metadata.mAcknowledged = true;
-                metadata.UpdateIn(*request);
+                request.mMetadata.mAcknowledged = true;
+                request.WriteMetadataInMessage();
             }
+
+            break;
+        }
 #endif
+
+        // If the request was to a multicast address, then this is NOT
+        // the final message, we may see more.
+
+        if (request.mMetadata.mCallbacks.HasResponseHandler() && request.mMetadata.mDestinationAddress.IsMulticast())
+        {
+            request.mMetadata.mCallbacks.InvokeResponseHandler(&aRxMsg, kErrorNone);
         }
         else
         {
-            FinalizeCoapTransaction(*request, metadata, &aMessage, &aMessageInfo, kErrorNone);
+            mPendingRequests.FinalizeRequest(request, kErrorNone, &aRxMsg);
         }
 
         break;
     }
 
 exit:
-
-    if (error == kErrorNone && request == nullptr)
-    {
-        bool didHandle = InvokeResponseFallback(aMessage, aMessageInfo);
-
-        if (!didHandle && aMessage.RequireResetOnError())
-        {
-            // Successfully parsed a header but no matching request was
-            // found - reject the message by sending reset.
-            IgnoreError(SendReset(aMessage, aMessageInfo));
-        }
-    }
+    return;
 }
 
-bool CoapBase::InvokeResponseFallback(Message &aMessage, const Ip6::MessageInfo &aMessageInfo) const
+bool CoapBase::InvokeResponseFallback(Msg &aRxMsg) const
 {
     bool didHandle = false;
 
     VerifyOrExit(mResponseFallback.IsSet());
-    didHandle = mResponseFallback.Invoke(&aMessage, &aMessageInfo);
+    didHandle = mResponseFallback.Invoke(&aRxMsg.mMessage, &aRxMsg.mMessageInfo);
 
 exit:
     return didHandle;
 }
 
-void CoapBase::ProcessReceivedRequest(Message &aMessage, const Ip6::MessageInfo &aMessageInfo)
+void CoapBase::ProcessReceivedRequest(Msg &aRxMsg)
 {
-    char  uriPath[Message::kMaxReceivedUriPath + 1];
-    Error error = kErrorNone;
-#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
-    Option::Iterator iterator;
-    char            *curUriPath        = uriPath;
-    uint8_t          blockOptionType   = 0;
-    uint32_t         totalTransferSize = 0;
-#endif
+    Message::UriPathStringBuffer uriPath;
+    Error                        error = kErrorNone;
 
     if (mInterceptor.IsSet())
     {
-        SuccessOrExit(error = mInterceptor.Invoke(aMessage, aMessageInfo));
+        SuccessOrExit(error = mInterceptor.Invoke(aRxMsg));
     }
 
     // Check if `mResponseCache` has a matching cached response for this
     // request and send it. Only if not found (`kErrorNotFound`), we
-    // continue to process the `aMessage` further.
+    // continue to process the `aRxMsg.mMessage` further.
 
-    error = mResponseCache.SendCachedResponse(aMessage, aMessageInfo, *this);
+    error = mResponseCache.SendCachedResponse(aRxMsg, *this);
 
     switch (error)
     {
@@ -944,19 +705,215 @@ void CoapBase::ProcessReceivedRequest(Message &aMessage, const Ip6::MessageInfo 
     }
 
 #if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
-    SuccessOrExit(error = iterator.Init(aMessage));
+    {
+        bool didHandle = false;
+
+        SuccessOrExit(error = ProcessBlockwiseRequest(aRxMsg, uriPath, didHandle));
+        VerifyOrExit(!didHandle);
+    }
+#else
+    SuccessOrExit(error = aRxMsg.mMessage.ReadUriPathOptions(uriPath));
+#endif
+
+    if ((mResourceHandler != nullptr) && mResourceHandler(*this, uriPath, aRxMsg))
+    {
+        error = kErrorNone;
+        ExitNow();
+    }
+
+    for (const Resource &resource : mResources)
+    {
+        if (StringMatch(resource.mUriPath, uriPath))
+        {
+            resource.HandleRequest(aRxMsg);
+            error = kErrorNone;
+            ExitNow();
+        }
+    }
+
+    if (mDefaultHandler.IsSet())
+    {
+        mDefaultHandler.Invoke(&aRxMsg.mMessage, &aRxMsg.mMessageInfo);
+        error = kErrorNone;
+        ExitNow();
+    }
+
+    error = kErrorNotFound;
+
+exit:
+    LogInfoOnError(error, "process request");
+
+    if (error == kErrorNotFound && !aRxMsg.mMessageInfo.GetSockAddr().IsMulticast())
+    {
+        IgnoreError(SendNotFound(aRxMsg));
+    }
+}
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// `CoapBase` - BLockwise transfer methods
+
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+
+void CoapBase::AddBlockWiseResource(ResourceBlockWise &aResource) { IgnoreError(mBlockWiseResources.Add(aResource)); }
+
+void CoapBase::RemoveBlockWiseResource(ResourceBlockWise &aResource)
+{
+    IgnoreError(mBlockWiseResources.Remove(aResource));
+    aResource.SetNext(nullptr);
+}
+
+Error CoapBase::ProcessBlockwiseSend(Msg &aMsg, const SendCallbacks &aCallbacks)
+{
+    Error     error      = kErrorNone;
+    uint8_t   type       = aMsg.GetType();
+    bool      moreBlocks = false;
+    uint16_t  blockSize;
+    uint8_t   buf[kMaxBlockSize];
+    BlockInfo blockInfo;
+
+    VerifyOrExit(type != kTypeReset);
+
+    VerifyOrExit(aCallbacks.HasBlockwiseTransmitHook());
+
+    SuccessOrExit(aMsg.mMessage.ReadBlockOptionValues(type == kTypeAck ? kOptionBlock2 : kOptionBlock1, blockInfo));
+
+    VerifyOrExit(blockInfo.mBlockNumber == 0);
+
+    blockSize = blockInfo.GetBlockSize();
+    VerifyOrExit(blockSize <= kMaxBlockSize, error = kErrorNoBufs);
+
+    SuccessOrExit(error = aCallbacks.mBlockwiseTransmitHook(aCallbacks.mContext, buf, 0, &blockSize, &moreBlocks));
+
+    SuccessOrExit(error = aMsg.mMessage.AppendPayloadMarker());
+    SuccessOrExit(error = aMsg.mMessage.AppendBytes(buf, blockSize));
+
+    switch (type)
+    {
+    case kTypeAck:
+        SuccessOrExit(error = CacheLastBlockResponse(&aMsg.mMessage));
+        break;
+
+    case kTypeNonConfirmable:
+        // Block-Wise messages always have to be confirmable
+        aMsg.UpdateType(kTypeConfirmable);
+        break;
+
+    default:
+        break;
+    }
+
+exit:
+    return error;
+}
+
+Error CoapBase::ProcessBlockwiseResponse(Msg &aRxMsg, Request &aRequest)
+{
+    Error    error             = kErrorNone;
+    uint8_t  blockOptionType   = 0;
+    uint32_t totalTransferSize = 0;
+
+    if (aRequest.mMetadata.mCallbacks.HasBlockwiseTransmitHook() ||
+        aRequest.mMetadata.mCallbacks.HasBlockwiseReceiveHook())
+    {
+        // Search for CoAP Block-Wise Option [RFC7959]
+        Option::Iterator iterator;
+
+        SuccessOrExit(error = iterator.Init(aRxMsg.mMessage));
+
+        while (!iterator.IsDone())
+        {
+            switch (iterator.GetOption()->GetNumber())
+            {
+            case kOptionBlock1:
+                blockOptionType += 1;
+                break;
+
+            case kOptionBlock2:
+                blockOptionType += 2;
+                break;
+
+            case kOptionSize2:
+                // ToDo: wait for method to read uint option values
+                totalTransferSize = 0;
+                break;
+
+            default:
+                break;
+            }
+
+            SuccessOrExit(error = iterator.Advance());
+        }
+    }
+
+    switch (blockOptionType)
+    {
+    case 0:
+        // Piggybacked response.
+        mPendingRequests.FinalizeRequest(aRequest, kErrorNone, &aRxMsg);
+        break;
+    case 1: // Block1 option
+        if (aRxMsg.GetCode() == kCodeContinue && aRequest.mMetadata.mCallbacks.HasBlockwiseTransmitHook())
+        {
+            error = SendNextBlock1Request(aRequest, aRxMsg);
+        }
+
+        if (aRxMsg.GetCode() != kCodeContinue || !aRequest.mMetadata.mCallbacks.HasBlockwiseTransmitHook() ||
+            error != kErrorNone)
+        {
+            mPendingRequests.FinalizeRequest(aRequest, error, &aRxMsg);
+        }
+        break;
+    case 2: // Block2 option
+        if (aRxMsg.GetCode() < kCodeBadRequest && aRequest.mMetadata.mCallbacks.HasBlockwiseReceiveHook())
+        {
+            error = SendNextBlock2Request(aRequest, aRxMsg, totalTransferSize, false);
+        }
+
+        if (aRxMsg.GetCode() >= kCodeBadRequest || !aRequest.mMetadata.mCallbacks.HasBlockwiseReceiveHook() ||
+            error != kErrorNone)
+        {
+            mPendingRequests.FinalizeRequest(aRequest, error, &aRxMsg);
+        }
+        break;
+    case 3: // Block1 & Block2 option
+        if (aRxMsg.GetCode() < kCodeBadRequest && aRequest.mMetadata.mCallbacks.HasBlockwiseReceiveHook())
+        {
+            error = SendNextBlock2Request(aRequest, aRxMsg, totalTransferSize, true);
+        }
+
+        mPendingRequests.FinalizeRequest(aRequest, error, &aRxMsg);
+        break;
+    default:
+        error = kErrorAbort;
+        mPendingRequests.FinalizeRequest(aRequest, error, &aRxMsg);
+        break;
+    }
+
+exit:
+    return error;
+}
+
+Error CoapBase::ProcessBlockwiseRequest(Msg &aRxMsg, Message::UriPathStringBuffer &aUriPath, bool &aDidHandle)
+{
+    Error            error = kErrorNone;
+    Option::Iterator iterator;
+    char            *curUriPath        = aUriPath;
+    uint8_t          blockOptionType   = 0;
+    uint32_t         totalTransferSize = 0;
+
+    SuccessOrExit(error = iterator.Init(aRxMsg.mMessage));
 
     while (!iterator.IsDone())
     {
         switch (iterator.GetOption()->GetNumber())
         {
         case kOptionUriPath:
-            if (curUriPath != uriPath)
+            if (curUriPath != aUriPath)
             {
                 *curUriPath++ = '/';
             }
 
-            VerifyOrExit(curUriPath + iterator.GetOption()->GetLength() < GetArrayEnd(uriPath), error = kErrorParse);
+            VerifyOrExit(curUriPath + iterator.GetOption()->GetLength() < GetArrayEnd(aUriPath), error = kErrorParse);
 
             IgnoreError(iterator.ReadOptionValue(curUriPath));
             curUriPath += iterator.GetOption()->GetLength();
@@ -986,7 +943,7 @@ void CoapBase::ProcessReceivedRequest(Message &aMessage, const Ip6::MessageInfo 
 
     for (const ResourceBlockWise &resource : mBlockWiseResources)
     {
-        if (!StringMatch(resource.GetUriPath(), uriPath))
+        if (!StringMatch(resource.GetUriPath(), aUriPath))
         {
             continue;
         }
@@ -998,24 +955,24 @@ void CoapBase::ProcessReceivedRequest(Message &aMessage, const Ip6::MessageInfo 
             case 1:
                 if (resource.mReceiveHook != nullptr)
                 {
-                    switch (ProcessBlock1Request(aMessage, aMessageInfo, resource, totalTransferSize))
+                    switch (ProcessBlock1Request(aRxMsg, resource, totalTransferSize))
                     {
                     case kErrorNone:
-                        resource.HandleRequest(aMessage, aMessageInfo);
+                        resource.HandleRequest(aRxMsg);
                         OT_FALL_THROUGH;
                     case kErrorBusy:
                         error = kErrorNone;
                         break;
                     case kErrorNoBufs:
-                        IgnoreReturnValue(SendHeaderResponse(kCodeRequestTooLarge, aMessage, aMessageInfo));
+                        IgnoreError(SendHeaderResponse(kCodeRequestTooLarge, aRxMsg));
                         error = kErrorDrop;
                         break;
                     case kErrorNoFrameReceived:
-                        IgnoreReturnValue(SendHeaderResponse(kCodeRequestIncomplete, aMessage, aMessageInfo));
+                        IgnoreError(SendHeaderResponse(kCodeRequestIncomplete, aRxMsg));
                         error = kErrorDrop;
                         break;
                     default:
-                        IgnoreReturnValue(SendHeaderResponse(kCodeInternalError, aMessage, aMessageInfo));
+                        IgnoreError(SendHeaderResponse(kCodeInternalError, aRxMsg));
                         error = kErrorDrop;
                         break;
                     }
@@ -1024,121 +981,25 @@ void CoapBase::ProcessReceivedRequest(Message &aMessage, const Ip6::MessageInfo 
             case 2:
                 if (resource.mTransmitHook != nullptr)
                 {
-                    if ((error = ProcessBlock2Request(aMessage, aMessageInfo, resource)) != kErrorNone)
+                    if ((error = ProcessBlock2Request(aRxMsg, resource)) != kErrorNone)
                     {
-                        IgnoreReturnValue(SendHeaderResponse(kCodeInternalError, aMessage, aMessageInfo));
+                        IgnoreError(SendHeaderResponse(kCodeInternalError, aRxMsg));
                         error = kErrorDrop;
                     }
                 }
                 break;
             }
+
+            aDidHandle = true;
             ExitNow();
         }
         else
         {
-            resource.HandleRequest(aMessage, aMessageInfo);
-            error = kErrorNone;
+            resource.HandleRequest(aRxMsg);
+            error      = kErrorNone;
+            aDidHandle = true;
             ExitNow();
         }
-    }
-#else
-    SuccessOrExit(error = aMessage.ReadUriPathOptions(uriPath));
-#endif // OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
-
-    if ((mResourceHandler != nullptr) && mResourceHandler(*this, uriPath, aMessage, aMessageInfo))
-    {
-        error = kErrorNone;
-        ExitNow();
-    }
-
-    for (const Resource &resource : mResources)
-    {
-        if (StringMatch(resource.mUriPath, uriPath))
-        {
-            resource.HandleRequest(aMessage, aMessageInfo);
-            error = kErrorNone;
-            ExitNow();
-        }
-    }
-
-    if (mDefaultHandler.IsSet())
-    {
-        mDefaultHandler.Invoke(&aMessage, &aMessageInfo);
-        error = kErrorNone;
-        ExitNow();
-    }
-
-    error = kErrorNotFound;
-
-exit:
-
-    if (error != kErrorNone)
-    {
-        LogInfo("Failed to process request: %s", ErrorToString(error));
-
-        if (error == kErrorNotFound && !aMessageInfo.GetSockAddr().IsMulticast())
-        {
-            IgnoreError(SendNotFound(aMessage, aMessageInfo));
-        }
-    }
-}
-
-// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-// `CoapBase` - BLockwise transfer methods
-
-#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
-
-void CoapBase::AddBlockWiseResource(ResourceBlockWise &aResource) { IgnoreError(mBlockWiseResources.Add(aResource)); }
-
-void CoapBase::RemoveBlockWiseResource(ResourceBlockWise &aResource)
-{
-    IgnoreError(mBlockWiseResources.Remove(aResource));
-    aResource.SetNext(nullptr);
-}
-
-Error CoapBase::SendMessage(Message                &aMessage,
-                            const Ip6::MessageInfo &aMessageInfo,
-                            const TxParameters     *aTxParameters,
-                            ResponseHandler         aHandler,
-                            void                   *aContext)
-{
-    return SendMessage(aMessage, aMessageInfo, aTxParameters, aHandler, aContext, nullptr, nullptr);
-}
-
-Error CoapBase::ProcessBlockwiseSend(Message &aMessage, BlockwiseTransmitHook aTransmitHook, void *aContext)
-{
-    Error    error      = kErrorNone;
-    uint8_t  type       = aMessage.GetType();
-    bool     moreBlocks = false;
-    uint16_t bufLen;
-    uint8_t  buf[kMaxBlockLength];
-
-    VerifyOrExit(type != kTypeReset);
-
-    VerifyOrExit(aTransmitHook != nullptr);
-    VerifyOrExit(aMessage.GetBlockWiseBlockNumber() == 0);
-
-    SuccessOrExit(aMessage.ReadBlockOptionValues(type == kTypeAck ? kOptionBlock2 : kOptionBlock1));
-
-    bufLen = BlockSizeFromExponent(aMessage.GetBlockWiseBlockSize());
-    VerifyOrExit(bufLen <= kMaxBlockLength, error = kErrorNoBufs);
-
-    SuccessOrExit(error = aTransmitHook(aContext, buf, 0, &bufLen, &moreBlocks));
-    SuccessOrExit(error = aMessage.AppendBytes(buf, bufLen));
-
-    switch (type)
-    {
-    case kTypeAck:
-        SuccessOrExit(error = CacheLastBlockResponse(&aMessage));
-        break;
-
-    case kTypeNonConfirmable:
-        // Block-Wise messages always have to be confirmable
-        aMessage.SetType(kTypeConfirmable);
-        break;
-
-    default:
-        break;
     }
 
 exit:
@@ -1157,7 +1018,7 @@ void CoapBase::FreeLastBlockResponse(void)
 Error CoapBase::CacheLastBlockResponse(Message *aResponse)
 {
     Error error = kErrorNone;
-    // Save last response for block-wise transfer
+
     FreeLastBlockResponse();
 
     if ((mLastResponse = aResponse->Clone()) == nullptr)
@@ -1168,29 +1029,28 @@ Error CoapBase::CacheLastBlockResponse(Message *aResponse)
     return error;
 }
 
-Error CoapBase::PrepareNextBlockRequest(Message::BlockType aType,
-                                        bool               aMoreBlocks,
-                                        Message           &aRequestOld,
-                                        Message           &aRequest,
-                                        Message           &aMessage)
+Error CoapBase::PrepareNextBlockRequest(uint16_t         aBlockOptionNumber,
+                                        Request         &aRequestOld,
+                                        Message         &aRequest,
+                                        const BlockInfo &aBlockInfo)
 {
-    Error            error       = kErrorNone;
+    Error            error;
     bool             isOptionSet = false;
-    uint16_t         blockOption = 0;
     Option::Iterator iterator;
-    Metadata         metadata;
 
-    blockOption = (aType == Message::kBlockType1) ? kOptionBlock1 : kOptionBlock2;
+    SuccessOrExit(error =
+                      aRequest.Init(kTypeConfirmable, static_cast<ot::Coap::Code>(aRequestOld.mMessage->ReadCode())));
 
-    aRequest.Init(kTypeConfirmable, static_cast<ot::Coap::Code>(aRequestOld.GetCode()));
-    // Iterate after metadata copied and removed.
-    metadata.ReadFrom(aRequestOld);
-    metadata.RemoveFrom(aRequestOld);
-    // Per RFC 7959, all requests in a block-wise transfer MUST use the same token.
-    IgnoreError(aRequest.SetTokenFromMessage(aRequestOld));
-    SuccessOrExit(error = iterator.Init(aRequestOld));
+    aRequestOld.RemoveMetadataFromMessage();
+
+    // Per RFC 7959, all requests in a block-wise transfer MUST use the
+    // same token.
+    IgnoreError(aRequest.WriteTokenFromMessage(*aRequestOld.mMessage));
 
     // Copy options from last response to next message
+
+    SuccessOrExit(error = iterator.Init(*aRequestOld.mMessage));
+
     for (; !iterator.IsDone() && iterator.GetOption()->GetLength() != 0; error = iterator.Advance())
     {
         uint16_t optionNumber = iterator.GetOption()->GetNumber();
@@ -1198,14 +1058,9 @@ Error CoapBase::PrepareNextBlockRequest(Message::BlockType aType,
         SuccessOrExit(error);
 
         // Check if option to copy next is higher than or equal to Block1 option
-        if (optionNumber >= blockOption && !isOptionSet)
+        if (optionNumber >= aBlockOptionNumber && !isOptionSet)
         {
-            // Write Block1 option to next message
-            SuccessOrExit(error = aRequest.AppendBlockOption(aType, aMessage.GetBlockWiseBlockNumber() + 1, aMoreBlocks,
-                                                             aMessage.GetBlockWiseBlockSize()));
-            aRequest.SetBlockWiseBlockNumber(aMessage.GetBlockWiseBlockNumber() + 1);
-            aRequest.SetBlockWiseBlockSize(aMessage.GetBlockWiseBlockSize());
-            aRequest.SetMoreBlocksFlag(aMoreBlocks);
+            SuccessOrExit(error = aRequest.AppendBlockOption(aBlockOptionNumber, aBlockInfo));
 
             isOptionSet = true;
 
@@ -1224,69 +1079,62 @@ Error CoapBase::PrepareNextBlockRequest(Message::BlockType aType,
 
     if (!isOptionSet)
     {
-        // Write Block1 option to next message
-        SuccessOrExit(error = aRequest.AppendBlockOption(aType, aMessage.GetBlockWiseBlockNumber() + 1, aMoreBlocks,
-                                                         aMessage.GetBlockWiseBlockSize()));
-        aRequest.SetBlockWiseBlockNumber(aMessage.GetBlockWiseBlockNumber() + 1);
-        aRequest.SetBlockWiseBlockSize(aMessage.GetBlockWiseBlockSize());
-        aRequest.SetMoreBlocksFlag(aMoreBlocks);
+        SuccessOrExit(error = aRequest.AppendBlockOption(aBlockOptionNumber, aBlockInfo));
     }
 
-    error = metadata.AppendTo(aRequestOld);
+    error = aRequestOld.AppendMetadataToMessage();
 
 exit:
     return error;
 }
 
-Error CoapBase::SendNextBlock1Request(Message                &aRequest,
-                                      Message                &aMessage,
-                                      const Ip6::MessageInfo &aMessageInfo,
-                                      const Metadata         &aCoapMetadata)
+Error CoapBase::SendNextBlock1Request(Request &aRequest, Msg &aRxMsg)
 {
-    Error    error                = kErrorNone;
-    Message *request              = nullptr;
-    bool     moreBlocks           = false;
-    uint8_t  buf[kMaxBlockLength] = {0};
-    uint16_t bufLen               = kMaxBlockLength;
+    Error     error              = kErrorNone;
+    Message  *request            = nullptr;
+    uint8_t   buf[kMaxBlockSize] = {0};
+    uint16_t  blockSize;
+    BlockInfo msgBlockInfo;
+    BlockInfo requestBlockInfo;
 
-    SuccessOrExit(error = aRequest.ReadBlockOptionValues(kOptionBlock1));
-    SuccessOrExit(error = aMessage.ReadBlockOptionValues(kOptionBlock1));
+    SuccessOrExit(error = aRequest.mMessage->ReadBlockOptionValues(kOptionBlock1, requestBlockInfo));
+    SuccessOrExit(error = aRxMsg.mMessage.ReadBlockOptionValues(kOptionBlock1, msgBlockInfo));
 
     // Conclude block-wise transfer if last block has been received
-    if (!aRequest.IsMoreBlocksFlagSet())
+    if (!requestBlockInfo.mMoreBlocks)
     {
-        FinalizeCoapTransaction(aRequest, aCoapMetadata, &aMessage, &aMessageInfo, kErrorNone);
+        mPendingRequests.FinalizeRequest(aRequest, kErrorNone, &aRxMsg);
         ExitNow();
     }
 
-    // Get next block
-    VerifyOrExit((bufLen = BlockSizeFromExponent(aMessage.GetBlockWiseBlockSize())) <= kMaxBlockLength,
-                 error = kErrorNoBufs);
+    blockSize = msgBlockInfo.GetBlockSize();
+    VerifyOrExit(blockSize <= kMaxBlockSize, error = kErrorNoBufs);
 
-    SuccessOrExit(error = aCoapMetadata.mBlockwiseTransmitHook(aCoapMetadata.mResponseContext, buf,
-                                                               BlockSizeFromExponent(aMessage.GetBlockWiseBlockSize()) *
-                                                                   (aMessage.GetBlockWiseBlockNumber() + 1),
-                                                               &bufLen, &moreBlocks));
+    requestBlockInfo.mBlockNumber = msgBlockInfo.mBlockNumber + 1;
+    requestBlockInfo.mBlockSzx    = msgBlockInfo.mBlockSzx;
+    requestBlockInfo.mMoreBlocks  = false;
 
-    // Check if block length is valid
-    VerifyOrExit(bufLen <= BlockSizeFromExponent(aMessage.GetBlockWiseBlockSize()), error = kErrorInvalidArgs);
+    SuccessOrExit(error = aRequest.mMetadata.mCallbacks.mBlockwiseTransmitHook(
+                      aRequest.mMetadata.mCallbacks.mContext, buf, requestBlockInfo.GetBlockOffsetPosition(),
+                      &blockSize, &requestBlockInfo.mMoreBlocks));
 
-    // Init request for next block
+    VerifyOrExit(blockSize <= msgBlockInfo.GetBlockSize(), error = kErrorInvalidArgs);
+
     VerifyOrExit((request = NewMessage()) != nullptr, error = kErrorNoBufs);
-    SuccessOrExit(error = PrepareNextBlockRequest(Message::kBlockType1, moreBlocks, aRequest, *request, aMessage));
 
-    SuccessOrExit(error = request->SetPayloadMarker());
+    SuccessOrExit(error = PrepareNextBlockRequest(kOptionBlock1, aRequest, *request, requestBlockInfo));
 
-    SuccessOrExit(error = request->AppendBytes(buf, bufLen));
+    SuccessOrExit(error = request->AppendPayloadMarker());
 
-    DequeueMessage(aRequest);
+    SuccessOrExit(error = request->AppendBytes(buf, blockSize));
 
-    LogInfo("Send Block1 Nr. %d, Size: %d bytes, More Blocks Flag: %d", request->GetBlockWiseBlockNumber(),
-            BlockSizeFromExponent(request->GetBlockWiseBlockSize()), request->IsMoreBlocksFlagSet());
+    mPendingRequests.Remove(aRequest);
 
-    SuccessOrExit(error = SendMessage(*request, aMessageInfo, /* aTxParamters */ nullptr,
-                                      aCoapMetadata.mResponseHandler, aCoapMetadata.mResponseContext,
-                                      aCoapMetadata.mBlockwiseTransmitHook, aCoapMetadata.mBlockwiseReceiveHook));
+    LogInfo("Send Block1 Nr. %d, Size: %d bytes, More Blocks Flag: %d", requestBlockInfo.mBlockNumber,
+            requestBlockInfo.GetBlockSize(), requestBlockInfo.mMoreBlocks);
+
+    SuccessOrExit(
+        error = SendMessage(*request, aRxMsg.mMessageInfo, /* aTxParamters */ nullptr, aRequest.mMetadata.mCallbacks));
 
 exit:
     FreeMessageOnError(request, error);
@@ -1294,60 +1142,56 @@ exit:
     return error;
 }
 
-Error CoapBase::SendNextBlock2Request(Message                &aRequest,
-                                      Message                &aMessage,
-                                      const Ip6::MessageInfo &aMessageInfo,
-                                      const Metadata         &aCoapMetadata,
-                                      uint32_t                aTotalLength,
-                                      bool                    aBeginBlock1Transfer)
+Error CoapBase::SendNextBlock2Request(Request &aRequest, Msg &aRxMsg, uint32_t aTotalLength, bool aBeginBlock1Transfer)
 {
-    Error    error                = kErrorNone;
-    Message *request              = nullptr;
-    uint8_t  buf[kMaxBlockLength] = {0};
-    uint16_t bufLen               = kMaxBlockLength;
+    Error         error   = kErrorNone;
+    Message      *request = nullptr;
+    uint8_t       buf[kMaxBlockSize];
+    OffsetRange   offsetRange;
+    BlockInfo     msgBlockInfo;
+    BlockInfo     requestBlockInfo;
+    SendCallbacks callbacks;
 
-    SuccessOrExit(error = aMessage.ReadBlockOptionValues(kOptionBlock2));
+    SuccessOrExit(error = aRxMsg.mMessage.ReadBlockOptionValues(kOptionBlock2, msgBlockInfo));
 
-    // Check payload and block length
-    VerifyOrExit((aMessage.GetLength() - aMessage.GetOffset()) <=
-                         BlockSizeFromExponent(aMessage.GetBlockWiseBlockSize()) &&
-                     (aMessage.GetLength() - aMessage.GetOffset()) <= kMaxBlockLength,
-                 error = kErrorNoBufs);
+    VerifyOrExit(msgBlockInfo.GetBlockSize() <= kMaxBlockSize, error = kErrorNoBufs);
 
-    // Read and then forward payload to receive hook function
-    bufLen = aMessage.ReadBytes(aMessage.GetOffset(), buf, aMessage.GetLength() - aMessage.GetOffset());
-    SuccessOrExit(error = aCoapMetadata.mBlockwiseReceiveHook(aCoapMetadata.mResponseContext, buf,
-                                                              BlockSizeFromExponent(aMessage.GetBlockWiseBlockSize()) *
-                                                                  aMessage.GetBlockWiseBlockNumber(),
-                                                              bufLen, aMessage.IsMoreBlocksFlagSet(), aTotalLength));
+    offsetRange.InitFromMessageOffsetToEnd(aRxMsg.mMessage);
+    VerifyOrExit(offsetRange.GetLength() <= msgBlockInfo.GetBlockSize(), error = kErrorNoBufs);
 
-    // CoAP Block-Wise Transfer continues
-    LogInfo("Received Block2 Nr. %d , Size: %d bytes, More Blocks Flag: %d", aMessage.GetBlockWiseBlockNumber(),
-            BlockSizeFromExponent(aMessage.GetBlockWiseBlockSize()), aMessage.IsMoreBlocksFlagSet());
+    aRxMsg.mMessage.ReadBytes(offsetRange, buf);
+    SuccessOrExit(error = aRequest.mMetadata.mCallbacks.mBlockwiseReceiveHook(
+                      aRequest.mMetadata.mCallbacks.mContext, buf, msgBlockInfo.GetBlockOffsetPosition(),
+                      offsetRange.GetLength(), msgBlockInfo.mMoreBlocks, aTotalLength));
 
-    // Conclude block-wise transfer if last block has been received
-    if (!aMessage.IsMoreBlocksFlagSet())
+    LogInfo("Received Block2 Nr. %d , Size: %d bytes, More Blocks Flag: %d", msgBlockInfo.mBlockNumber,
+            msgBlockInfo.GetBlockSize(), msgBlockInfo.mMoreBlocks);
+
+    if (!msgBlockInfo.mMoreBlocks)
     {
-        FinalizeCoapTransaction(aRequest, aCoapMetadata, &aMessage, &aMessageInfo, kErrorNone);
+        mPendingRequests.FinalizeRequest(aRequest, kErrorNone, &aRxMsg);
         ExitNow();
     }
 
-    // Init request for next block
     VerifyOrExit((request = NewMessage()) != nullptr, error = kErrorNoBufs);
-    SuccessOrExit(error = PrepareNextBlockRequest(Message::kBlockType2, aMessage.IsMoreBlocksFlagSet(), aRequest,
-                                                  *request, aMessage));
+
+    requestBlockInfo = msgBlockInfo;
+    requestBlockInfo.mBlockNumber++;
+    requestBlockInfo.mMoreBlocks = false; // RFC 7959 Section 2.3 second bullet: MUST be 0 in request.
+
+    SuccessOrExit(error = PrepareNextBlockRequest(kOptionBlock2, aRequest, *request, requestBlockInfo));
 
     if (!aBeginBlock1Transfer)
     {
-        DequeueMessage(aRequest);
+        mPendingRequests.Remove(aRequest);
     }
 
-    LogInfo("Request Block2 Nr. %d, Size: %d bytes", request->GetBlockWiseBlockNumber(),
-            BlockSizeFromExponent(request->GetBlockWiseBlockSize()));
+    LogInfo("Request Block2 Nr. %d, Size: %d bytes", requestBlockInfo.mBlockNumber, requestBlockInfo.GetBlockSize());
 
-    SuccessOrExit(error =
-                      SendMessage(*request, aMessageInfo, /* aTxParameters */ nullptr, aCoapMetadata.mResponseHandler,
-                                  aCoapMetadata.mResponseContext, nullptr, aCoapMetadata.mBlockwiseReceiveHook));
+    callbacks                        = aRequest.mMetadata.mCallbacks;
+    callbacks.mBlockwiseTransmitHook = nullptr;
+
+    SuccessOrExit(error = SendMessage(*request, aRxMsg.mMessageInfo, /* aTxParameters */ nullptr, callbacks));
 
 exit:
     FreeMessageOnError(request, error);
@@ -1355,47 +1199,38 @@ exit:
     return error;
 }
 
-Error CoapBase::ProcessBlock1Request(Message                 &aMessage,
-                                     const Ip6::MessageInfo  &aMessageInfo,
-                                     const ResourceBlockWise &aResource,
-                                     uint32_t                 aTotalLength)
+Error CoapBase::ProcessBlock1Request(Msg &aRxMsg, const ResourceBlockWise &aResource, uint32_t aTotalLength)
 {
-    Error    error                = kErrorNone;
-    Message *response             = nullptr;
-    uint8_t  buf[kMaxBlockLength] = {0};
-    uint16_t bufLen               = kMaxBlockLength;
+    Error       error    = kErrorNone;
+    Message    *response = nullptr;
+    uint8_t     buf[kMaxBlockSize];
+    OffsetRange offsetRange;
+    BlockInfo   msgBlockInfo;
 
-    SuccessOrExit(error = aMessage.ReadBlockOptionValues(kOptionBlock1));
+    SuccessOrExit(error = aRxMsg.mMessage.ReadBlockOptionValues(kOptionBlock1, msgBlockInfo));
 
-    // Read and then forward payload to receive hook function
-    VerifyOrExit((aMessage.GetLength() - aMessage.GetOffset()) <= kMaxBlockLength, error = kErrorNoBufs);
-    bufLen = aMessage.ReadBytes(aMessage.GetOffset(), buf, aMessage.GetLength() - aMessage.GetOffset());
-    SuccessOrExit(error = aResource.HandleBlockReceive(
-                      buf, BlockSizeFromExponent(aMessage.GetBlockWiseBlockSize()) * aMessage.GetBlockWiseBlockNumber(),
-                      bufLen, aMessage.IsMoreBlocksFlagSet(), aTotalLength));
+    offsetRange.InitFromMessageOffsetToEnd(aRxMsg.mMessage);
+    VerifyOrExit(offsetRange.GetLength() <= kMaxBlockSize, error = kErrorNoBufs);
 
-    if (aMessage.IsMoreBlocksFlagSet())
+    aRxMsg.mMessage.ReadBytes(offsetRange, buf);
+    SuccessOrExit(error =
+                      aResource.HandleBlockReceive(buf, msgBlockInfo.GetBlockOffsetPosition(), offsetRange.GetLength(),
+                                                   msgBlockInfo.mMoreBlocks, aTotalLength));
+
+    if (msgBlockInfo.mMoreBlocks)
     {
         // Set up next response
         VerifyOrExit((response = NewMessage()) != nullptr, error = kErrorFailed);
-        response->Init(kTypeAck, kCodeContinue);
-        response->SetMessageId(aMessage.GetMessageId());
-        IgnoreReturnValue(response->SetToken(AsConst(aMessage).GetToken(), aMessage.GetTokenLength()));
+        SuccessOrExit(error = response->Init(kTypeAck, kCodeContinue, aRxMsg.GetMessageId()));
+        SuccessOrExit(error = response->WriteTokenFromMessage(aRxMsg.mMessage));
 
-        response->SetBlockWiseBlockNumber(aMessage.GetBlockWiseBlockNumber());
-        response->SetMoreBlocksFlag(aMessage.IsMoreBlocksFlagSet());
-        response->SetBlockWiseBlockSize(aMessage.GetBlockWiseBlockSize());
-
-        SuccessOrExit(error = response->AppendBlockOption(Message::kBlockType1, response->GetBlockWiseBlockNumber(),
-                                                          response->IsMoreBlocksFlagSet(),
-                                                          response->GetBlockWiseBlockSize()));
+        SuccessOrExit(error = response->AppendBlockOption(kOptionBlock1, msgBlockInfo));
 
         SuccessOrExit(error = CacheLastBlockResponse(response));
 
-        LogInfo("Acknowledge Block1 Nr. %d, Size: %d bytes", response->GetBlockWiseBlockNumber(),
-                BlockSizeFromExponent(response->GetBlockWiseBlockSize()));
+        LogInfo("Acknowledge Block1 Nr. %d, Size: %d bytes", msgBlockInfo.mBlockNumber, msgBlockInfo.GetBlockSize());
 
-        SuccessOrExit(error = SendMessage(*response, aMessageInfo));
+        SuccessOrExit(error = SendMessage(*response, aRxMsg.mMessageInfo));
 
         error = kErrorBusy;
     }
@@ -1415,61 +1250,50 @@ exit:
     return error;
 }
 
-Error CoapBase::ProcessBlock2Request(Message                 &aMessage,
-                                     const Ip6::MessageInfo  &aMessageInfo,
-                                     const ResourceBlockWise &aResource)
+Error CoapBase::ProcessBlock2Request(Msg &aRxMsg, const ResourceBlockWise &aResource)
 {
-    Error            error                = kErrorNone;
-    Message         *response             = nullptr;
-    uint8_t          buf[kMaxBlockLength] = {0};
-    uint16_t         bufLen               = kMaxBlockLength;
-    bool             moreBlocks           = false;
-    uint64_t         optionBuf            = 0;
+    Error            error              = kErrorNone;
+    Message         *response           = nullptr;
+    uint64_t         optionBuf          = 0;
+    uint8_t          buf[kMaxBlockSize] = {0};
+    uint16_t         blockSize;
     Option::Iterator iterator;
+    BlockInfo        msgBlockInfo;
+    BlockInfo        responseBlockInfo;
 
-    SuccessOrExit(error = aMessage.ReadBlockOptionValues(kOptionBlock2));
+    SuccessOrExit(error = aRxMsg.mMessage.ReadBlockOptionValues(kOptionBlock2, msgBlockInfo));
 
-    LogInfo("Request for Block2 Nr. %d, Size: %d bytes received", aMessage.GetBlockWiseBlockNumber(),
-            BlockSizeFromExponent(aMessage.GetBlockWiseBlockSize()));
+    LogInfo("Request for Block2 Nr. %d, Size: %d bytes received", msgBlockInfo.mBlockNumber,
+            msgBlockInfo.GetBlockSize());
 
-    if (aMessage.GetBlockWiseBlockNumber() == 0)
+    if (msgBlockInfo.mBlockNumber == 0)
     {
-        aResource.HandleRequest(aMessage, aMessageInfo);
+        aResource.HandleRequest(aRxMsg);
         ExitNow();
     }
 
-    // Set up next response
     VerifyOrExit((response = NewMessage()) != nullptr, error = kErrorNoBufs);
-    response->Init(kTypeAck, kCodeContent);
-    response->SetMessageId(aMessage.GetMessageId());
 
-    SuccessOrExit(error = response->SetTokenFromMessage(aMessage));
+    SuccessOrExit(error = response->Init(kTypeAck, kCodeContent, aRxMsg.GetMessageId()));
+    SuccessOrExit(error = response->WriteTokenFromMessage(aRxMsg.mMessage));
 
-    VerifyOrExit((bufLen = BlockSizeFromExponent(aMessage.GetBlockWiseBlockSize())) <= kMaxBlockLength,
-                 error = kErrorNoBufs);
-    SuccessOrExit(error = aResource.HandleBlockTransmit(
-                      buf, BlockSizeFromExponent(aMessage.GetBlockWiseBlockSize()) * aMessage.GetBlockWiseBlockNumber(),
-                      &bufLen, &moreBlocks));
+    responseBlockInfo.mMoreBlocks = false;
 
-    response->SetMoreBlocksFlag(moreBlocks);
+    VerifyOrExit((blockSize = msgBlockInfo.GetBlockSize()) <= kMaxBlockSize, error = kErrorNoBufs);
+    SuccessOrExit(error = aResource.HandleBlockTransmit(buf, msgBlockInfo.GetBlockOffsetPosition(), &blockSize,
+                                                        &responseBlockInfo.mMoreBlocks));
 
-    if (moreBlocks)
+    if (responseBlockInfo.mMoreBlocks)
     {
-        BlockSzx blockSzx;
-
-        SuccessOrExit(error = DetermineBlockSzxFromSize(bufLen, blockSzx));
-        response->SetBlockWiseBlockSize(blockSzx);
+        SuccessOrExit(error = DetermineBlockSzxFromSize(blockSize, responseBlockInfo.mBlockSzx));
     }
     else
     {
-        // Verify that buffer length is not larger than requested block size
-        VerifyOrExit(bufLen <= BlockSizeFromExponent(aMessage.GetBlockWiseBlockSize()), error = kErrorInvalidArgs);
-        response->SetBlockWiseBlockSize(aMessage.GetBlockWiseBlockSize());
+        VerifyOrExit(blockSize <= msgBlockInfo.GetBlockSize(), error = kErrorInvalidArgs);
+        responseBlockInfo.mBlockSzx = msgBlockInfo.mBlockSzx;
     }
 
-    response->SetBlockWiseBlockNumber(
-        (BlockSizeFromExponent(aMessage.GetBlockWiseBlockSize()) * aMessage.GetBlockWiseBlockNumber()) /
-        (BlockSizeFromExponent(response->GetBlockWiseBlockSize())));
+    responseBlockInfo.mBlockNumber = msgBlockInfo.GetBlockOffsetPosition() / responseBlockInfo.GetBlockSize();
 
     // Copy options from last response
     SuccessOrExit(error = iterator.Init(*mLastResponse));
@@ -1480,9 +1304,7 @@ Error CoapBase::ProcessBlock2Request(Message                 &aMessage,
 
         if (optionNumber == kOptionBlock2)
         {
-            SuccessOrExit(error = response->AppendBlockOption(Message::kBlockType2, response->GetBlockWiseBlockNumber(),
-                                                              response->IsMoreBlocksFlagSet(),
-                                                              response->GetBlockWiseBlockSize()));
+            SuccessOrExit(error = response->AppendBlockOption(kOptionBlock2, responseBlockInfo));
         }
         else if (optionNumber == kOptionBlock1)
         {
@@ -1493,10 +1315,10 @@ Error CoapBase::ProcessBlock2Request(Message                 &aMessage,
         SuccessOrExit(error = iterator.Advance());
     }
 
-    SuccessOrExit(error = response->SetPayloadMarker());
-    SuccessOrExit(error = response->AppendBytes(buf, bufLen));
+    SuccessOrExit(error = response->AppendPayloadMarker());
+    SuccessOrExit(error = response->AppendBytes(buf, blockSize));
 
-    if (response->IsMoreBlocksFlagSet())
+    if (responseBlockInfo.mMoreBlocks)
     {
         SuccessOrExit(error = CacheLastBlockResponse(response));
     }
@@ -1506,10 +1328,10 @@ Error CoapBase::ProcessBlock2Request(Message                 &aMessage,
         FreeLastBlockResponse();
     }
 
-    LogInfo("Send Block2 Nr. %d, Size: %d bytes, More Blocks Flag %d", response->GetBlockWiseBlockNumber(),
-            BlockSizeFromExponent(response->GetBlockWiseBlockSize()), response->IsMoreBlocksFlagSet());
+    LogInfo("Send Block2 Nr. %d, Size: %d bytes, More Blocks Flag %d", responseBlockInfo.mBlockNumber,
+            responseBlockInfo.GetBlockSize(), responseBlockInfo.mMoreBlocks);
 
-    SuccessOrExit(error = SendMessage(*response, aMessageInfo));
+    SuccessOrExit(error = SendMessage(*response, aRxMsg.mMessageInfo));
 
 exit:
     FreeMessageOnError(response, error);
@@ -1539,6 +1361,405 @@ exit:
 
 #endif // OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
 
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+// `CoapBase` - Observe methods
+
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+
+Error CoapBase::ProcessObserveSend(Msg &aTxMsg, Request &aRequest)
+{
+    Error            error;
+    Option::Iterator iterator;
+
+    aRequest.mMetadata.mObserve   = false;
+    aRequest.mMetadata.mIsRequest = aTxMsg.IsRequest();
+
+    SuccessOrExit(error = iterator.Init(aTxMsg.mMessage, kOptionObserve));
+    aRequest.mMetadata.mObserve = !iterator.IsDone();
+
+    // Special case, if we're sending a GET with Observe=1, that is a
+    // cancellation.
+
+    if (aRequest.mMetadata.mObserve && aTxMsg.IsGetRequest())
+    {
+        uint64_t value = 0;
+
+        SuccessOrExit(error = iterator.ReadOptionValue(value));
+
+        if (value == 1)
+        {
+            Request request;
+
+            aRequest.mMetadata.mObserve = false;
+
+            // If we can find the previous matching request, cancel that too.
+
+            if (mPendingRequests.FindRelatedRequest(aTxMsg, request) == kErrorNone)
+            {
+                mPendingRequests.FinalizeRequest(request, kErrorNone);
+            }
+        }
+    }
+
+exit:
+    return error;
+}
+
+#endif // OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+
+//---------------------------------------------------------------------------------------------------------------------
+// CoapBase::SendCallbacks
+
+void CoapBase::SendCallbacks::Clear(void)
+{
+    // We avoid using `ClearAllBytes()` or `Clearable` because they
+    // zero out all object memory. Unlike standard data pointers, the
+    // C++ standard does not strictly guarantee that a `nullptr`
+    // function pointer is represented by an "all-bits-zero" memory
+    // pattern.
+
+    mContext                       = nullptr;
+    mResponseHandler               = nullptr;
+    mResponseHandlerSeparateParams = nullptr;
+#if OPENTHREAD_CONFIG_COAP_BLOCKWISE_TRANSFER_ENABLE
+    mBlockwiseReceiveHook  = nullptr;
+    mBlockwiseTransmitHook = nullptr;
+#endif
+}
+
+bool CoapBase::SendCallbacks::HasResponseHandler(void) const
+{
+    return (mResponseHandler != nullptr) || (mResponseHandlerSeparateParams != nullptr);
+}
+
+bool CoapBase::SendCallbacks::Matches(ResponseHandler aHandler, void *aContext) const
+{
+    return (mResponseHandler == aHandler) && (mContext == aContext);
+}
+
+void CoapBase::SendCallbacks::InvokeResponseHandler(Msg *aMsg, Error aResult) const
+{
+    if (mResponseHandler != nullptr)
+    {
+        mResponseHandler(mContext, aMsg, aResult);
+    }
+    else if (mResponseHandlerSeparateParams != nullptr)
+    {
+        Message                *message     = (aMsg != nullptr) ? &aMsg->mMessage : nullptr;
+        const Ip6::MessageInfo *messageInfo = (aMsg != nullptr) ? &aMsg->mMessageInfo : nullptr;
+
+        mResponseHandlerSeparateParams(mContext, message, messageInfo, aResult);
+    }
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+// CoapBase::Request::Metadata
+
+void CoapBase::Request::Metadata::Init(const Msg           &aTxMsg,
+                                       const TxParameters  &aTxParams,
+                                       const SendCallbacks &aCallbacks)
+{
+    mSourceAddress      = aTxMsg.mMessageInfo.GetSockAddr();
+    mDestinationPort    = aTxMsg.mMessageInfo.GetPeerPort();
+    mDestinationAddress = aTxMsg.mMessageInfo.GetPeerAddr();
+    mMulticastLoop      = aTxMsg.mMessageInfo.GetMulticastLoop();
+    mCallbacks          = aCallbacks;
+    mRetxRemaining      = aTxParams.mMaxRetransmit;
+    mRetxTimeout        = aTxParams.CalculateInitialRetransmissionTimeout();
+    mAcknowledged       = false;
+    mConfirmable        = aTxMsg.IsConfirmable();
+#if OPENTHREAD_CONFIG_BACKBONE_ROUTER_ENABLE
+    mHopLimit        = aTxMsg.mMessageInfo.GetHopLimit();
+    mIsHostInterface = aTxMsg.mMessageInfo.IsHostInterface();
+#endif
+
+    mTimerFireTime = TimerMilli::GetNow() + (mConfirmable ? mRetxTimeout : aTxParams.CalculateMaxTransmitWait());
+}
+
+bool CoapBase::Request::Metadata::HasSamePeerAddrAndPort(const Ip6::MessageInfo &aMessageInfo) const
+{
+    return (mDestinationPort == aMessageInfo.GetPeerPort()) && (mDestinationAddress == aMessageInfo.GetPeerAddr());
+}
+
+bool CoapBase::Request::Metadata::ShouldRetransmit(void) const { return mConfirmable && (mRetxRemaining > 0); }
+
+void CoapBase::Request::Metadata::UpdateRetxCounterAndTimeout(TimeMilli aNow)
+{
+    mRetxRemaining--;
+    mRetxTimeout *= 2;
+
+    mTimerFireTime = aNow + mRetxTimeout;
+}
+
+void CoapBase::Request::Metadata::CopyInfoTo(Ip6::MessageInfo &aMessageInfo) const
+{
+    aMessageInfo.SetPeerAddr(mDestinationAddress);
+    aMessageInfo.SetPeerPort(mDestinationPort);
+    aMessageInfo.SetSockAddr(mSourceAddress);
+    aMessageInfo.SetMulticastLoop(mMulticastLoop);
+#if OPENTHREAD_CONFIG_BACKBONE_ROUTER_ENABLE
+    aMessageInfo.SetHopLimit(mHopLimit);
+    aMessageInfo.SetIsHostInterface(mIsHostInterface);
+#endif
+}
+
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+bool CoapBase::Request::Metadata::IsObserveSubscription(void) const
+{
+    // Indicate whether the message is an RFC7641 subscription which
+    // is already acknowledged.
+
+    return mIsRequest && mObserve && mAcknowledged;
+}
+#endif
+
+//---------------------------------------------------------------------------------------------------------------------
+// CoapBase::PendingRequests
+
+CoapBase::PendingRequests::PendingRequests(Instance &aInstance, CoapBase &aCoapBase)
+    : mCoapBase(aCoapBase)
+    , mTimer(aInstance, HandleTimer, this)
+{
+}
+
+Error CoapBase::PendingRequests::AddClone(const Message &aMessage, uint16_t aCopyLength, Request &aRequest)
+{
+    Error error = kErrorNone;
+
+    aRequest.mMessage = aMessage.Clone(aCopyLength);
+    VerifyOrExit(aRequest.HasMessage(), error = kErrorNoBufs);
+
+    SuccessOrExit(error = aRequest.AppendMetadataToMessage());
+
+    mRequestMessages.Enqueue(*aRequest.mMessage);
+
+    mTimer.FireAtIfEarlier(aRequest.mMetadata.mTimerFireTime);
+
+exit:
+    FreeAndNullMessageOnError(aRequest.mMessage, error);
+    return error;
+}
+
+void CoapBase::PendingRequests::Remove(Request &aRequest)
+{
+    VerifyOrExit(aRequest.HasMessage());
+    mRequestMessages.DequeueAndFree(*aRequest.mMessage);
+    aRequest.Clear();
+
+exit:
+    return;
+}
+
+Error CoapBase::PendingRequests::FindRelatedRequest(const Msg &aMsg, Request &aRequest)
+{
+    Error error = kErrorNotFound;
+
+    for (Message &message : mRequestMessages)
+    {
+        aRequest.InitFrom(message);
+
+        if (aRequest.mMetadata.HasSamePeerAddrAndPort(aMsg.mMessageInfo) ||
+            aRequest.mMetadata.mDestinationAddress.IsMulticast() ||
+            aRequest.mMetadata.mDestinationAddress.GetIid().IsAnycastLocator())
+        {
+            switch (aMsg.GetType())
+            {
+            case kTypeReset:
+            case kTypeAck:
+                if (aMsg.GetMessageId() == message.ReadMessageId())
+                {
+                    ExitNow(error = kErrorNone);
+                }
+
+                break;
+
+            case kTypeConfirmable:
+            case kTypeNonConfirmable:
+                if (aMsg.mMessage.HasSameTokenAs(message))
+                {
+                    ExitNow(error = kErrorNone);
+                }
+
+                break;
+            }
+        }
+    }
+
+    aRequest.Clear();
+
+exit:
+    return error;
+}
+
+void CoapBase::PendingRequests::FinalizeRequest(Request &aRequest, Error aResult)
+{
+    FinalizeRequest(aRequest, aResult, /* aResponse */ nullptr);
+}
+
+void CoapBase::PendingRequests::FinalizeRequest(Request &aRequest, Error aResult, Msg *aResponse)
+{
+    VerifyOrExit(aRequest.HasMessage());
+
+    Remove(aRequest);
+    aRequest.mMetadata.mCallbacks.InvokeResponseHandler(aResponse, aResult);
+
+exit:
+    return;
+}
+
+void CoapBase::PendingRequests::AbortAllRequests(void)
+{
+    IgnoreError(AbortAllMatching(Matcher()));
+    mTimer.Stop();
+}
+
+void CoapBase::PendingRequests::AbortRequestsMatching(const Ip6::Address &aAddress)
+{
+    IgnoreError(AbortAllMatching(Matcher(aAddress)));
+}
+
+Error CoapBase::PendingRequests::AbortRequestsMatching(ResponseHandler aHandler, void *aContext)
+{
+    return AbortAllMatching(Matcher(aHandler, aContext));
+}
+
+Error CoapBase::PendingRequests::AbortAllMatching(const Matcher &aMatcher)
+{
+    Error        error = kErrorNotFound;
+    MessageQueue abortedMessages;
+
+    for (Message &message : mRequestMessages)
+    {
+        Request request;
+
+        request.InitFrom(message);
+
+        if (aMatcher.Matches(request))
+        {
+            mRequestMessages.Dequeue(message);
+            abortedMessages.Enqueue(message);
+            error = kErrorNone;
+        }
+    }
+
+    FinalizeRemovedRequestsIn(abortedMessages, kErrorAbort);
+
+    return error;
+}
+
+void CoapBase::PendingRequests::FinalizeRemovedRequestsIn(MessageQueue &aQueue, Error aResult)
+{
+    for (Message &message : aQueue)
+    {
+        Request request;
+
+        request.InitFrom(message);
+        request.mMetadata.mCallbacks.InvokeResponseHandler(/* aResponse */ nullptr, aResult);
+    }
+
+    aQueue.DequeueAndFreeAll();
+}
+
+void CoapBase::PendingRequests::RetransmitRequest(const Request &aRequest)
+{
+    Error            error;
+    Message         *clone;
+    Ip6::MessageInfo messageInfo;
+
+    clone = aRequest.mMessage->Clone(aRequest.mMessage->GetLength() - sizeof(Request::Metadata));
+    VerifyOrExit(clone != nullptr, error = kErrorNoBufs);
+
+    aRequest.mMetadata.CopyInfoTo(messageInfo);
+
+    SuccessOrExit(error = mCoapBase.Send(*clone, messageInfo));
+
+exit:
+    FreeMessageOnError(clone, error);
+}
+
+void CoapBase::PendingRequests::HandleTimer(Timer &aTimer)
+{
+    static_cast<PendingRequests *>(static_cast<TimerMilliContext &>(aTimer).GetContext())->HandleTimer();
+}
+
+void CoapBase::PendingRequests::HandleTimer(void)
+{
+    NextFireTime nextTime;
+    MessageQueue expiredMessages;
+
+    for (Message &message : mRequestMessages)
+    {
+        Request request;
+
+        request.InitFrom(message);
+
+#if OPENTHREAD_CONFIG_COAP_OBSERVE_API_ENABLE
+        if (request.mMetadata.IsObserveSubscription())
+        {
+            // This is an RFC7641 subscription which is already
+            // acknowledged. We do not time it out, so skip it when
+            // determining the next fire time.
+            continue;
+        }
+#endif
+
+        if (nextTime.GetNow() >= request.mMetadata.mTimerFireTime)
+        {
+            if (!request.mMetadata.ShouldRetransmit())
+            {
+                // We move the expired request to a separate queue to
+                // finalize it after the loop. This ensures that the
+                // iterator over `mRequestMessages` remains valid
+                // even if the user callback (invoked during
+                // finalization) modifies any pending requests
+
+                mRequestMessages.Dequeue(message);
+                expiredMessages.Enqueue(message);
+                continue;
+            }
+
+            request.mMetadata.UpdateRetxCounterAndTimeout(nextTime.GetNow());
+            request.WriteMetadataInMessage();
+
+            if (!request.mMetadata.mAcknowledged)
+            {
+                RetransmitRequest(request);
+            }
+        }
+
+        nextTime.UpdateIfEarlier(request.mMetadata.mTimerFireTime);
+    }
+
+    mTimer.FireAt(nextTime);
+
+    FinalizeRemovedRequestsIn(expiredMessages, kErrorResponseTimeout);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+// CoapBase::PendingRequests::Matcher
+
+bool CoapBase::PendingRequests::Matcher::Matches(const Request &aRequest) const
+{
+    bool matches = false;
+
+    switch (mMode)
+    {
+    case kAny:
+        break;
+    case kAddress:
+        VerifyOrExit(aRequest.mMetadata.mSourceAddress == *mAddress);
+        break;
+    case kHandler:
+        VerifyOrExit(aRequest.mMetadata.mCallbacks.Matches(mHandler, mContext));
+        break;
+    }
+
+    matches = true;
+
+exit:
+    return matches;
+}
+
 //---------------------------------------------------------------------------------------------------------------------
 // CoapBase::ResponseCache
 
@@ -1547,17 +1768,15 @@ CoapBase::ResponseCache::ResponseCache(Instance &aInstance)
 {
 }
 
-Error CoapBase::ResponseCache::SendCachedResponse(const Message          &aRequest,
-                                                  const Ip6::MessageInfo &aMessageInfo,
-                                                  CoapBase               &aCoapBase)
+Error CoapBase::ResponseCache::SendCachedResponse(const Msg &aRxMsg, CoapBase &aCoapBase)
 {
     // Search `ResponseCache` for a cached response matching the given
-    // `aRequest`. If found, clone the response and send it. Returns
+    // request `aRxMsg`. If found, clone the response and send it. Returns
     // `kErrorNotFound` if no match is found, `kErrorNone` on success,
     // or other errors if send fails.
 
     Error          error    = kErrorNone;
-    const Message *match    = FindMatching(aRequest.GetMessageId(), aMessageInfo);
+    const Message *match    = FindMatching(aRxMsg);
     Message       *response = nullptr;
 
     VerifyOrExit(match != nullptr, error = kErrorNotFound);
@@ -1565,28 +1784,27 @@ Error CoapBase::ResponseCache::SendCachedResponse(const Message          &aReque
     response = match->Clone(match->GetLength() - sizeof(ResponseMetadata));
     VerifyOrExit(response != nullptr, error = kErrorNoBufs);
 
-    response->Finish();
-
-    error = aCoapBase.Send(*response, aMessageInfo);
+    error = aCoapBase.Send(*response, aRxMsg.mMessageInfo);
 
 exit:
     FreeMessageOnError(response, error);
     return error;
 }
 
-const Message *CoapBase::ResponseCache::FindMatching(uint16_t aMessageId, const Ip6::MessageInfo &aMessageInfo) const
+const Message *CoapBase::ResponseCache::FindMatching(const Msg &aRxMsg) const
 {
-    const Message *match = nullptr;
+    const Message *match        = nullptr;
+    uint16_t       requestMsgId = aRxMsg.GetMessageId();
 
     for (const Message &response : mResponses)
     {
-        if (response.GetMessageId() == aMessageId)
+        if (response.ReadMessageId() == requestMsgId)
         {
             ResponseMetadata metadata;
 
             metadata.ReadFrom(response);
 
-            if (metadata.mMessageInfo.HasSamePeerAddrAndPort(aMessageInfo))
+            if (metadata.mMessageInfo.HasSamePeerAddrAndPort(aRxMsg.mMessageInfo))
             {
                 match = &response;
                 break;
@@ -1597,25 +1815,23 @@ const Message *CoapBase::ResponseCache::FindMatching(uint16_t aMessageId, const 
     return match;
 }
 
-void CoapBase::ResponseCache::Add(const Message          &aResponse,
-                                  const Ip6::MessageInfo &aMessageInfo,
-                                  uint32_t                aExchangeLifetime)
+void CoapBase::ResponseCache::Add(const Msg &aTxMsg, uint32_t aExchangeLifetime)
 {
-    // Adds a clone of the `aResponse` to the cache if a matching
+    // Adds a clone of the `aTxMsg` to the cache if a matching
     // entry does not already exist.
 
     Message         *responseClone = nullptr;
     ResponseMetadata metadata;
 
-    VerifyOrExit(FindMatching(aResponse.GetMessageId(), aMessageInfo) == nullptr);
+    VerifyOrExit(FindMatching(aTxMsg) == nullptr);
 
     MaintainCacheSize();
 
-    responseClone = aResponse.Clone();
+    responseClone = aTxMsg.mMessage.Clone();
     VerifyOrExit(responseClone != nullptr);
 
     metadata.mExpireTime  = TimerMilli::GetNow() + aExchangeLifetime;
-    metadata.mMessageInfo = aMessageInfo;
+    metadata.mMessageInfo = aTxMsg.mMessageInfo;
 
     SuccessOrExit(metadata.AppendTo(*responseClone));
 
@@ -1723,7 +1939,7 @@ const TxParameters &TxParameters::GetDefault(void)
     return AsCoreType(&kDefaultTxParameters);
 }
 
-Error TxParameters::ValidateFor(const Message &aMessage) const
+Error TxParameters::ValidateFor(const Msg &aMsg) const
 {
     Error    error = kErrorInvalidArgs;
     uint32_t duration;
@@ -1732,7 +1948,7 @@ Error TxParameters::ValidateFor(const Message &aMessage) const
     if (mAckTimeout == 0)
     {
         // Fire and forget is only allowed for non-confirmable messages.
-        VerifyOrExit(aMessage.IsNonConfirmable());
+        VerifyOrExit(aMsg.IsNonConfirmable());
         error = kErrorNone;
         ExitNow();
     }

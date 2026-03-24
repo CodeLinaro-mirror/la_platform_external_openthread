@@ -141,6 +141,10 @@ Error Core::SetEnabled(bool aEnable, uint32_t aInfraIfIndex, Requester aRequeste
     {
         LogInfo("%snabling on infra-if-index %lu", (aRequester == kRequesterAuto) ? "Auto-e" : "E",
                 ToUlong(mInfraIfIndex));
+
+#if OPENTHREAD_CONFIG_REFERENCE_DEVICE_ENABLE
+        SuccessOrAssert(GetInstance().SetDnsNameCompressionEnabled(true));
+#endif
     }
     else
     {
@@ -4101,25 +4105,16 @@ bool Core::TxMessage::ShouldClearAppendStateOnReinit(const Entry &aEntry) const
 
 const char *Core::TxMessage::TypeToString(Type aType)
 {
-    static const char *const kTypeStrings[] = {
-        "multicast probe",         // kMulticastProbe
-        "multicast query",         // kMulticastQuery
-        "multicast response",      // kMulticastResponse
-        "unicast response",        // kUnicastResponse
-        "legacy-unicast response", // kLegacyUnicastResponse
-    };
+#define TypeMapList(_)                          \
+    _(kMulticastProbe, "multicast probe")       \
+    _(kMulticastQuery, "multicast query")       \
+    _(kMulticastResponse, "multicast response") \
+    _(kUnicastResponse, "unicast response")     \
+    _(kLegacyUnicastResponse, "legacy-unicast response")
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kMulticastProbe);
-        ValidateNextEnum(kMulticastQuery);
-        ValidateNextEnum(kMulticastResponse);
-        ValidateNextEnum(kUnicastResponse);
-        ValidateNextEnum(kLegacyUnicastResponse);
-    };
+    DefineEnumStringArray(TypeMapList);
 
-    return kTypeStrings[aType];
+    return kStrings[aType];
 }
 
 //----------------------------------------------------------------------------------------------------------------------
@@ -4280,12 +4275,7 @@ Error Core::RxMessage::Init(Instance          &aInstance,
     mMessagePtr = aMessagePtr.PassOwnership();
 
 exit:
-    if (error != kErrorNone)
-    {
-        LogInfo("Failed to parse message from %s, error:%s", aSenderAddress.GetAddress().ToString().AsCString(),
-                ErrorToString(error));
-    }
-
+    LogInfoOnError(error, "parse message from %s", aSenderAddress.GetAddress().ToString().AsCString());
     return error;
 }
 

@@ -40,23 +40,15 @@ namespace Nat64 {
 
 const char *StateToString(State aState)
 {
-    static const char *const kStateString[] = {
-        "Disabled",
-        "NotRunning",
-        "Idle",
-        "Active",
-    };
+#define StateMapList(_)               \
+    _(kStateDisabled, "Disabled")     \
+    _(kStateNotRunning, "NotRunning") \
+    _(kStateIdle, "Idle")             \
+    _(kStateActive, "Active")
 
-    struct EnumCheck
-    {
-        InitEnumValidatorCounter();
-        ValidateNextEnum(kStateDisabled);
-        ValidateNextEnum(kStateNotRunning);
-        ValidateNextEnum(kStateIdle);
-        ValidateNextEnum(kStateActive);
-    };
+    DefineEnumStringArray(StateMapList);
 
-    return kStateString[aState];
+    return kStrings[aState];
 }
 
 #if OPENTHREAD_CONFIG_NAT64_TRANSLATOR_ENABLE
@@ -195,7 +187,7 @@ Error Translator::TranslateIp6ToIp4(Message &aMessage)
     }
 
     // TODO: Implement the logic for replying ICMP messages.
-    ip4Header.SetTotalLength(sizeof(Ip4::Header) + aMessage.GetLength() - aMessage.GetOffset());
+    ip4Header.SetTotalLength(sizeof(Ip4::Header) + aMessage.DetermineLengthAfterOffset());
 
     Checksum::UpdateMessageChecksum(aMessage, ip4Header.GetSource(), ip4Header.GetDestination(),
                                     ip4Header.GetProtocol());
@@ -293,7 +285,7 @@ Error Translator::TranslateIp4ToIp6(Message &aMessage)
     }
 
     // TODO: Implement the logic for replying ICMP datagrams.
-    ip6Header.SetPayloadLength(aMessage.GetLength() - aMessage.GetOffset());
+    ip6Header.SetPayloadLength(aMessage.DetermineLengthAfterOffset());
 
     Checksum::UpdateMessageChecksum(aMessage, ip6Header.GetSource(), ip6Header.GetDestination(),
                                     ip6Header.GetNextHeader());

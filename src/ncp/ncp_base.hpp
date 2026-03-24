@@ -325,6 +325,20 @@ public:
     void DnssdStopBrowser(const otPlatDnssdBrowser *aBrowser);
 
     /**
+     * Starts a service resolver.
+     *
+     * @param[in] aResolver  The resolver to be started.
+     */
+    void DnssdStartSrvResolver(const otPlatDnssdSrvResolver *aResolver);
+
+    /**
+     * Stops a service resolver.
+     *
+     * @param[in] aResolver  The resolver to be stopped.
+     */
+    void DnssdStopSrvResolver(const otPlatDnssdSrvResolver *aResolver);
+
+    /**
      * Gets the Dnssd state.
      *
      * Returns the platform dnssd state.
@@ -661,13 +675,15 @@ protected:
     static unsigned int ConvertLogRegion(otLogRegion aLogRegion);
 
 #if OPENTHREAD_CONFIG_DIAG_ENABLE
-    static void HandleDiagOutput_Jump(const char *aFormat, va_list aArguments, void *aContext);
-    void        HandleDiagOutput(const char *aFormat, va_list aArguments);
+    static void HandleDiagOutput_Jump(const char *aFormat, va_list aArguments, void *aContext)
+        OT_TOOL_PRINTF_STYLE_FORMAT_ARG_CHECK(1, 0);
+    void HandleDiagOutput(const char *aFormat, va_list aArguments) OT_TOOL_PRINTF_STYLE_FORMAT_ARG_CHECK(2, 0);
 #endif
 
 #if OPENTHREAD_CONFIG_NCP_CLI_STREAM_ENABLE
-    static int HandleCliOutput(void *aContext, const char *aFormat, va_list aArguments);
-    int        HandleCliOutput(const char *aFormat, va_list aArguments);
+    static int HandleCliOutput(void *aContext, const char *aFormat, va_list aArguments)
+        OT_TOOL_PRINTF_STYLE_FORMAT_ARG_CHECK(2, 0);
+    int HandleCliOutput(const char *aFormat, va_list aArguments) OT_TOOL_PRINTF_STYLE_FORMAT_ARG_CHECK(2, 0);
 #endif
 
 #if OPENTHREAD_ENABLE_NCP_VENDOR_HOOK
@@ -941,6 +957,11 @@ protected:
 template <> struct NcpBase::DnssdDiscoveryPropKeyFor<otPlatDnssdBrowser>
 {
     static constexpr spinel_prop_key_t Key = SPINEL_PROP_DNSSD_BROWSER;
+};
+
+template <> struct NcpBase::DnssdDiscoveryPropKeyFor<otPlatDnssdSrvResolver>
+{
+    static constexpr spinel_prop_key_t Key = SPINEL_PROP_DNSSD_SRV_RESOLVER;
 };
 #endif
 
