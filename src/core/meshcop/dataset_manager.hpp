@@ -212,7 +212,7 @@ public:
     Error SendGetRequest(const Dataset::Components &aDatasetComponents,
                          const uint8_t             *aTlvTypes,
                          uint8_t                    aLength,
-                         const otIp6Address        *aAddress) const;
+                         const Ip6::Address        *aAddress) const;
 
     /**
      * Processes a MGMT_GET request message and prepares the response.
@@ -279,19 +279,15 @@ private:
     bool  IsPendingDataset(void) const { return (mType == Dataset::kPending); }
     void  Restore(const Dataset &aDataset);
     Error ApplyConfiguration(const Dataset &aDataset) const;
-    void  HandleGet(const Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo) const;
+    void  HandleGet(const Coap::Msg &aMsg) const;
     void  HandleTimer(void);
     Error Save(const Dataset &aDataset, bool aAllowOlderTimestamp);
     void  LocalSave(const Dataset &aDataset);
     void  SignalDatasetChange(void) const;
     void  SyncLocalWithLeader(const Dataset &aDataset);
     Error SendSetRequest(const Dataset &aDataset);
-    void  HandleMgmtSetResponse(Coap::Message *aMessage, const Ip6::MessageInfo *aMessageInfo, Error aError);
 
-    static void HandleMgmtSetResponse(void                *aContext,
-                                      otMessage           *aMessage,
-                                      const otMessageInfo *aMessageInfo,
-                                      otError              aError);
+    DeclareTmfResponseHandlerIn(DatasetManager, HandleMgmtSetResponse);
 
 #if OPENTHREAD_CONFIG_PLATFORM_KEY_REFERENCES_ENABLE
     void  MoveKeysToSecureStorage(Dataset &aDataset) const;
@@ -302,11 +298,9 @@ private:
 #endif
 
 #if OPENTHREAD_FTD
-    Error HandleSetOrReplace(MgmtCommand aCommand, const Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
+    Error HandleSetOrReplace(MgmtCommand aCommand, const Coap::Msg &aMsg);
     Error ProcessSetOrReplaceRequest(MgmtCommand aCommand, const Coap::Message &aMessage, RequestInfo &aInfo) const;
-    void  SendSetOrReplaceResponse(const Coap::Message    &aRequest,
-                                   const Ip6::MessageInfo &aMessageInfo,
-                                   StateTlv::State         aState);
+    void  SendSetOrReplaceResponse(const Coap::Msg &aMsg, StateTlv::State aState);
 #endif
 
     Type                      mType;
@@ -390,7 +384,7 @@ public:
 #endif
 
 private:
-    template <Uri kUri> void HandleTmf(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
+    template <Uri kUri> void HandleTmf(Coap::Msg &aMsg);
 
     static void HandleTimer(Timer &aTimer);
     void        HandleTimer(void) { DatasetManager::HandleTimer(); }
@@ -477,7 +471,7 @@ private:
     void        HandleTimer(void) { DatasetManager::HandleTimer(); }
 
     void                     HandleDelayTimer(void);
-    template <Uri kUri> void HandleTmf(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
+    template <Uri kUri> void HandleTmf(Coap::Msg &aMsg);
 
     using DelayTimer = TimerMilliIn<PendingDatasetManager, &PendingDatasetManager::HandleDelayTimer>;
 
