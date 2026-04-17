@@ -88,20 +88,12 @@ private:
     void  PrepareAndSendAnswers(const Ip6::Address &aDestination, const Message &aRequest);
     Error CheckAnswerLength(Coap::Message *&aAnswer, AnswerInfo &aInfo);
     void  SendNextAnswer(Coap::Message &aAnswer, const Ip6::Address &aDestination);
-    void  PrepareMessageInfoForDest(const Ip6::Address &aDestination, Tmf::MessageInfo &aMessageInfo) const;
     Error AppendNetworkInfo(Coap::Message *&aAnswer, AnswerInfo &aInfo, const RequestTlv &aRequestTlv);
-    Error AppendEmptyTlv(Coap::Message &aAnswer, Tlv::Type aTlvType);
 
-    static void HandleAnswerResponse(void                *aContext,
-                                     otMessage           *aMessage,
-                                     const otMessageInfo *aMessageInfo,
-                                     otError              aResult);
-    void        HandleAnswerResponse(Coap::Message          &aNextAnswer,
-                                     Coap::Message          *aResponse,
-                                     const Ip6::MessageInfo *aMessageInfo,
-                                     Error                   aResult);
+    static void HandleAnswerResponse(void *aContext, Coap::Msg *aMsg, Error aResult);
+    void        HandleAnswerResponse(Coap::Message &aNextAnswer, Coap::Msg *aResponse, Error aResult);
 
-    template <Uri kUri> void HandleTmf(Coap::Message &aMessage, const Ip6::MessageInfo &aMessageInfo);
+    template <Uri kUri> void HandleTmf(Coap::Msg &aMsg);
 
     Coap::MessageQueue mAnswerQueue;
 };
